@@ -6,6 +6,11 @@ quality checks, an HTML report, and a filterable dashboard. The same server acce
 transactions CSV, derives the student list, runs the pipeline into an isolated workspace,
 and opens the analysis without touching the committed warehouse.
 
+It also includes a per-student money planner: a student enters the money they have, names
+their own categories, records planned and actual amounts, and gets a saved analysis with
+planned-versus-actual totals, category shares and inline SVG charts. The planner is
+local, needs no JavaScript and never asks for bank or card credentials.
+
 Built as a learning project: the code is intentionally module-by-module and documented
 so the reasoning behind each stage is visible.
 
@@ -24,6 +29,14 @@ so the reasoning behind each stage is visible.
 - How does week-over-week spending change?
 - Which transactions are unusual enough to investigate?
 - How consistent are the numbers between the raw file, the warehouse and the report?
+
+For one student's own numbers, the money planner answers:
+
+- How much of the money available is planned, spent, left and unallocated?
+- Which of my own categories are over plan, under plan, unplanned or unused?
+- What share of spending went to each category, and to essential versus flexible needs?
+- What does the planned-versus-actual comparison look like as a graph?
+- What is the average daily spend across the dates I entered?
 
 ## Architecture
 
@@ -45,11 +58,14 @@ data/raw/*.csv
       │
       ├── report.py       reports/spending_report.html (charts + tables from SQL)
       │
-      ├── web.py          student-spending serve → dashboard + upload workspace
-      └── platform.py     validate one upload, run it in an isolated workspace
+      ├── web.py          student-spending serve → dashboard + upload + money plan
+      ├── platform.py     validate one upload, run it in an isolated workspace
+      └── personal.py     validate one student money plan, analyse it, store it locally
 ```
 
 The report and the dashboard read the same SQL views; neither computes its own totals.
+The money planner is separate: it analyses only the values the student submits and saves
+the plan as JSON under `data/plans/`, so it never writes to the warehouse.
 
 Every row read from the CSV must be accounted for:
 
@@ -83,13 +99,14 @@ virtual environment.
 ```powershell
 python scripts\generate_synthetic_data.py     # writes data/raw/*.csv
 student-spending --full-refresh               # deletes the warehouse, then rebuilds it
-python run_tests.py                           # 95 tests
+python run_tests.py                           # 127 tests
 start reports\spending_report.html
-student-spending serve --open                 # dashboard; blocks until Ctrl+C
+student-spending serve --open                 # local server; blocks until Ctrl+C
 ```
 
-Open `http://127.0.0.1:8000/` for the sample dashboard or
-`http://127.0.0.1:8000/upload` to analyze your own synthetic CSVs.
+Open `http://127.0.0.1:8000/` for the sample dashboard,
+`http://127.0.0.1:8000/plan` to plan one student's money, or
+`http://127.0.0.1:8000/upload` to analyze a synthetic transactions CSV.
 
 Omit `--full-refresh` to rerun against the existing warehouse. Because loading is
 upsert-based and change-detected, a rerun inserts nothing and updates nothing.
@@ -130,8 +147,10 @@ the integration tests. The full run log is also written to `logs/pipeline.log`.
 | `--port` | `8000` | port to bind; use `0` to pick a free port |
 | `--open` | off | open the dashboard in the default browser |
 
-`serve` refuses to start when the warehouse is missing, unreadable or empty, and
-prints the rebuild command instead of serving a broken page. Stop it with Ctrl+C.
+`serve` hosts the sample dashboard at `/`, the CSV upload at `/upload` and the
+one-student money planner at `/plan`. It refuses to start when the warehouse is missing,
+unreadable or empty, and prints the rebuild command instead of serving a broken page.
+Stop it with Ctrl+C.
 
 ## What a run produces (verified output of this repository)
 
@@ -211,6 +230,63 @@ These are valid transactions, not errors. They are flagged and kept.
 Every rejected or quarantined row is written to
 `data/quarantine/rejections_<run_id>.csv` and to the warehouse audit tables.
 
+## Plan your own money
+
+![Money plan form](docs/images/plan-form.png)
+
+Open `http://127.0.0.1:8000/plan` (or choose **Plan my money** on the dashboard). The
+form is an ordinary HTML form with no JavaScript:
+
+1. **Money** — a display name (a nickname is fine), the money available for the period,
+   and an optional budgeting method and note. The method is a label for your approach;
+   the category amounts are what the comparison uses.
+2. **Categories** — name your own categories, in your own words. Each row takes an
+   optional planned amount and an **Essential** or **Flexible** flag. There is no fixed
+   category list. Blank rows are ignored, and at least two named categories are required.
+3. **Spending** — one row per purchase or payment: date, one of your category names,
+   amount and an optional note. Category matching ignores capitalisation, and entries in
+   a category with no planned amount are still included and marked **No plan**.
+4. **Review** — confirm the numbers are made up, then select **Run my analysis**.
+
+Amounts accept `2,500`, `2500`, `12 500` and `KES 2500.50`, and are stored as integer
+cents. The form provides 12 category rows and 24 spending rows, and a plan cannot hold
+more than those limits.
+
+The result page is saved under an unguessable `/plan?plan=p-…` link and shows:
+
+- cards for money available, planned, spent and left;
+- plain-language banners for unallocated money, overspending, unplanned spending and
+  unspent plan lines;
+- a ranked category chart and a grouped **plan next to actual** chart, both inline SVG
+  with tooltips and a swipe hint on phones;
+- a category table with planned, spent, difference, share and status (**On plan**,
+  **Under plan**, **Over plan**, **No plan**, **Not used**, **No activity**);
+- an essential-versus-flexible split, the spending entries behind the totals, and the
+  budgeting method you chose.
+
+![Money plan result](docs/images/plan-result.png)
+
+Everything is calculated from the submitted values: totals, shares, the daily average
+over the entered date span, and the over-plan and unplanned lists. The page does not
+advise on financial products or tell the student what they should spend.
+
+The result is a `303` redirect to the bookmarkable GET page, so a refresh does not save
+the plan twice. **Edit as a copy** opens the form prefilled and saves a new plan rather
+than overwriting the old one. Plans are JSON files under `data/plans/`, are not listed
+anywhere, and are never sent to a remote service. There is no account, login, bank
+connection or credential field; the only write endpoints are `POST /upload` and
+`POST /plan`.
+
+Keep the result link if you want to return: with no listing or index, the link is the
+only way back. To clear saved plans, remove the JSON files in `data/plans/` (the
+directory is git-ignored). This is a learning tool for made-up numbers, not a bank
+statement or a financial adviser.
+
+![Money plan at phone width](docs/images/plan-mobile.png)
+
+At phone width the cards and table rows stack, and each chart scrolls sideways inside
+its own container with a visible hint, so no value is squeezed off the page.
+
 ## Upload and analyze a CSV
 
 ![Upload workspace](docs/images/upload-page.png)
@@ -274,10 +350,12 @@ Uploaded files are saved locally and are never sent to a remote service.
 At phone width the form stacks into one column and the history card moves below it, so
 neither the input nor the limits are pushed off-screen.
 
-The upload endpoint is the only write path. Requests are checked against `Origin` and
-`Sec-Fetch-Site` to block cross-site form posts, and the server keeps the
+`POST /upload` and `POST /plan` are the only write paths. Requests are checked against
+`Origin` and `Sec-Fetch-Site` to block cross-site form posts, and the server keeps the
 `same-origin` referrer policy so a real browser sends a verifiable origin while still
-not leaking URLs to other sites. There is no login, so keep the server on loopback.
+not leaking URLs to other sites. Uploads and plans are size-limited, and plan ids are
+validated against a strict pattern before a file is read. There is no login, so keep
+the server on loopback.
 
 ## Dashboard
 
@@ -313,8 +391,9 @@ The server binds to `127.0.0.1` by default, opens SQLite with `mode=ro` **and**
 `PRAGMA query_only = ON`, and opens a short-lived connection per request. It sends a
 restrictive Content-Security-Policy, `nosniff`, `no-store` and a `same-origin` referrer
 policy, escapes all database text into HTML, and prefixes spreadsheet-formula characters
-in CSV exports. Apart from `POST /upload` (which only starts an isolated pipeline run),
-it has no login or write endpoint, and serves no arbitrary files.
+in CSV exports. The dashboard itself is read-only: the only write endpoints are
+`POST /upload` (which starts an isolated pipeline run) and `POST /plan` (which saves one
+JSON plan). There is no login and the server serves no arbitrary files.
 
 ![Dashboard at phone width](docs/images/dashboard-mobile.png)
 
@@ -343,14 +422,15 @@ student-spending-analytics/
 ├── data/
 │   ├── raw/                  committed synthetic inputs (3 CSV files)
 │   ├── uploads/              isolated copies of uploaded analyses (git-ignored)
+│   ├── plans/                saved one-student money plans as JSON (git-ignored)
 │   ├── quarantine/           generated rejection audit CSVs (git-ignored)
 │   └── processed/            reserved for future exports (git-ignored)
 ├── docs/                     data dictionary, quality policy, learning log
 ├── reports/                  generated HTML report; uploads/ per analysis (git-ignored)
 ├── scripts/                  generate_synthetic_data.py, check_env.py
 ├── sql/                      schema.sql, example_queries.sql
-├── src/student_spending/     pipeline, report, platform and dashboard modules
-├── tests/                    95 unittest cases
+├── src/student_spending/     pipeline, report, platform, dashboard and plan modules
+├── tests/                    127 unittest cases
 ├── warehouse/                generated SQLite database; uploads/ per analysis (git-ignored)
 ├── logs/                     pipeline.log (git-ignored)
 ├── pyproject.toml            package metadata, console script, build config
@@ -433,7 +513,7 @@ python run_tests.py
 python -m unittest discover -s tests -t . -v
 ```
 
-95 tests covering: extraction failures and malformed rows, derived and explicit student
+127 tests covering: extraction failures and malformed rows, derived and explicit student
 dimensions, every validation rule, normalisation, duplicate handling, reconciliation
 accounting, idempotent loading, foreign keys and CHECK constraints, analytics totals and
 shares, anomaly flagging, all quality checks, end-to-end pipeline runs including rerun
@@ -441,6 +521,16 @@ and single-file behaviour, and the web surface: filter composition against hand-
 SQL, literal wildcard and injection attempts, sort/date/allow-list validation, pagination
 clamping, HTML escaping, CSV formula guards, report routing, security headers, read-only
 enforcement and CLI dispatch.
+
+The money planner adds tests for amount parsing (`2,500`, `KES 2500.50`, `1 000`, invalid
+and negative values), draft validation (names, duplicates, unknown spending categories,
+dates, bounds, at least two categories and one spending row, synthetic confirmation),
+integer-cent analysis (planned/spent/left/unallocated, category statuses, essential and
+flexible shares, daily average), JSON storage and reload, rejection of malformed or
+tampered plan files, and the web flow: form rendering, submission and bookmarkable
+result, edit-as-copy, validation errors that preserve input and save nothing, cross-site
+and wrong-content-type guards, injected-text escaping, and analysis with zero planned
+amounts.
 
 The upload platform adds tests for single-CSV multipart validation (missing, duplicate
 and unknown fields; wrong extensions; missing headers; header-only and binary files;
@@ -471,7 +561,11 @@ escaped analysis names.
 | Two-layer upload guard: origin check plus synthetic confirmation | The server rejects cross-site form posts and the submitter explicitly confirms the data is fake; neither is a substitute for authentication, which is why binding stays on loopback by default |
 | Read-only SQLite URI plus `query_only` | The dashboard cannot accidentally write, even if a handler is wrong; each request gets its own short-lived connection |
 | Fixed sort and filter allow-lists | Untrusted input never becomes SQL text; `LIKE` wildcards are escaped and ordering is chosen from a dict |
-| Shared `theme.py` and `components.py` | The report and dashboard use one visual language and one set of escaping/format helpers, so fixes apply to both |
+| Shared `theme.py` and `components.py` | The report, dashboard and planner use one visual language and one set of escaping/format helpers, so fixes apply to both |
+| User-defined category names instead of a fixed list | A student thinks in their own words; a fixed enum would force them to mislabel spending or use "Other" for everything. Duplicates are detected case-insensitively |
+| Planner writes JSON, not warehouse tables | It is a per-student worksheet, not a batch fact table; keeping it out of the warehouse preserves the pipeline's reconciliation identities and the sample dataset |
+| Plan analysis computes in Python from validated values | The page only reads the saved plan and shows arithmetic on the student's own numbers; it does not claim a statistical or advisory result |
+| Random, unguessable plan ids with no listing | There is no login, so the result link is the access token; a directory index would expose every saved plan to anyone on the machine |
 | Editable install with a console script | One command to run the pipeline; the `src/` layout also prevents tests from importing the package by accident |
 | CI runs the pipeline twice | Proves idempotency on a clean machine, not just in a local wrapper |
 
@@ -512,9 +606,21 @@ external services.
   and quality stages and appear as quarantined rows or a quality alert.
 - Dashboard filters are applied on submit rather than live-updating, and search is a
   substring match over two text columns, not a ranked full-text search.
+- The money planner is a single-student worksheet with no history, month switching or
+  comparison between periods. It does not import the sample warehouse or an uploaded
+  CSV, and it has no recurring-entry or currency-conversion support; all amounts are KES.
+- The planner form shows 12 category rows and 24 spending rows, and every submission
+  creates a new saved plan, including **Edit as a copy**. There is no in-place update,
+  delete button, retention policy or list of saved plans; remove files under
+  `data/plans/` by hand.
+- Saved plans are unencrypted JSON containing the display name, amounts, categories and
+  notes. There is no login: anyone who can reach the server or read the disk and knows a
+  plan id can read that plan. That is acceptable only for made-up numbers on loopback.
+- The plan analysis describes the entered numbers (totals, shares, averages and plan
+  status). It is not a forecast, credit assessment or financial advice.
 - No authentication or encryption. That is acceptable only because the data is fake and
   stays on the local disk; real financial data would require both, plus a deletion and
-  retention policy for uploaded files.
+  retention policy for uploaded files and saved plans.
 
 ## Future improvements
 
@@ -525,6 +631,10 @@ external services.
 - dbt-style transformation tests or a data quality framework once the SQL grows.
 - Postgres or DuckDB when data outgrows a single SQLite file.
 - Add saved filter views and a small JSON endpoint over the same validated filters.
+- Let the planner import a student's own rows from the dashboard or a CSV, add monthly
+  periods and recurring entries, and export the analysis.
+- Add a plan list with an explicit delete/retention action once the planner has a real
+  authentication story.
 - Publish tagged releases once the input contract has stayed stable across a few runs.
 
 ## Project log

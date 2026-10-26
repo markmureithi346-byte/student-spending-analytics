@@ -23,6 +23,7 @@ PROJECT_ROOT = _locate_project_root()
 
 RAW_DATA_DIR = PROJECT_ROOT / "data" / "raw"
 UPLOAD_DATA_DIR = PROJECT_ROOT / "data" / "uploads"
+PLAN_DATA_DIR = PROJECT_ROOT / "data" / "plans"
 PROCESSED_DATA_DIR = PROJECT_ROOT / "data" / "processed"
 QUARANTINE_DIR = PROJECT_ROOT / "data" / "quarantine"
 WAREHOUSE_DIR = PROJECT_ROOT / "warehouse"

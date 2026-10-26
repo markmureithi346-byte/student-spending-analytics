@@ -23,7 +23,29 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from . import config
-from .components import bar_chart, integer, money, share_cell, table
+from .components import bar_chart, grouped_bar_chart, integer, money, percent, share_cell, table
+from .personal import (
+    BUDGET_METHODS,
+    CATEGORY_ROWS,
+    MAX_CATEGORIES,
+    MAX_CATEGORY_NAME_LENGTH,
+    MAX_ENTRY_NOTE_LENGTH,
+    MAX_METHOD_NOTE_LENGTH,
+    MAX_NAME_LENGTH,
+    MAX_PLAN_REQUEST_BYTES,
+    MAX_SPENDINGS,
+    SPENDING_ROWS,
+    PlanDraft,
+    PlanRequestError,
+    SavedPlan,
+    analyse,
+    load_plan,
+    parse_form,
+    plan_to_draft,
+    read_draft,
+    save_plan,
+    validate_draft,
+)
 from .platform import (
     FILE_FIELDS,
     MAX_CSV_ROWS,
@@ -135,11 +157,11 @@ _DASH_CSS = """
   cursor: pointer; }
 .upload-form .columns { margin: 0; color: var(--muted); font-size: 11.5px;
   line-height: 1.45; overflow-wrap: anywhere; }
-.upload-form .check-field { grid-column: 1 / -1; display: flex; gap: 10px;
-  align-items: flex-start; padding: 12px 14px; border: 1px solid #ddcff2;
+.upload-form .check-field, .plan-form .check-field { grid-column: 1 / -1; display: flex;
+  gap: 10px; align-items: flex-start; padding: 12px 14px; border: 1px solid #ddcff2;
   border-radius: 12px; background: #fbf8ff; font-size: 13px; color: #4c3a66; }
-.upload-form .check-field input { width: 18px; height: 18px; margin: 2px 0 0;
-  flex: 0 0 auto; accent-color: var(--accent); }
+.upload-form .check-field input, .plan-form .check-field input { width: 18px;
+  height: 18px; margin: 2px 0 0; flex: 0 0 auto; accent-color: var(--accent); }
 .upload-form .actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap;
   gap: 10px; align-items: center; }
 .upload-note { grid-column: 1 / -1; margin: 0; color: var(--muted); font-size: 12px; }
@@ -160,7 +182,52 @@ _DASH_CSS = """
   font-size: 13px; }
 .upload-steps li { margin-bottom: 6px; }
 .upload-steps strong { color: var(--ink); }
+.plan-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 16px; margin-top: 14px; }
+.plan-grid .field-full { grid-column: 1 / -1; }
+.plan-form input, .plan-form select, .plan-form textarea { width: 100%;
+  padding: 9px 11px; border: 1px solid #ddcff2; border-radius: 10px;
+  background: #fff; color: var(--ink); font: inherit; font-size: 14px; }
+.plan-form input:hover, .plan-form select:hover, .plan-form textarea:hover {
+  border-color: #c4a5ea; }
+.plan-form input:focus, .plan-form select:focus, .plan-form textarea:focus {
+  outline: 3px solid rgba(124,58,237,.2); border-color: var(--accent); }
+.plan-form textarea { min-height: 82px; resize: vertical; }
+.plan-rows { margin-top: 14px; }
+.plan-row-head, .plan-row { display: grid; gap: 8px; align-items: center; }
+.cat-cols { grid-template-columns: 30px minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr); }
+.spend-cols { grid-template-columns: 30px minmax(0, 1.1fr) minmax(0, 1.5fr)
+  minmax(0, .9fr) minmax(0, 1.9fr); }
+.plan-row-head { padding: 0 2px 4px; color: #7a6a95; font-size: 10.5px;
+  text-transform: uppercase; letter-spacing: .06em; font-weight: 800; }
+.plan-row { margin-bottom: 7px; }
+.plan-row input, .plan-row select { padding: 8px 9px; font-size: 13px; }
+.row-no { color: #9a8cb5; font-size: 11px; font-weight: 700;
+  font-variant-numeric: tabular-nums; text-align: right; }
+.plan-section-note { margin: 8px 0 0; color: var(--muted); font-size: 12px; }
+.error-list { margin: 5px 0 0; padding-left: 18px; }
+.error-list li { margin: 2px 0; }
+.plan-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+  margin-top: 14px; }
+.plan-cards { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.plan-meta { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 0 0 4px;
+  color: var(--muted); font-size: 13px; }
+.plan-meta strong { color: var(--ink); }
+.method-note { margin: 10px 0 0; padding: 12px 14px; border-left: 3px solid #c4b5fd;
+  background: #fbf8ff; border-radius: 0 10px 10px 0; color: #4c3a66; font-size: 13.5px; }
+.insight-list { margin: 8px 0 0; padding-left: 20px; color: #3f2b5c; font-size: 14px; }
+.insight-list li { margin-bottom: 7px; }
+.plan-tag { display: inline-block; margin-left: 7px; padding: 1px 7px;
+  border-radius: 999px; background: #f3edfb; color: #5b21b6; font-size: 10.5px;
+  font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+.pill.warn { background: #fff7ed; color: #9a3412; }
+.pill.neutral { background: #f3edfb; color: #5b21b6; }
+.banner.note { background: #fbf8ff; border: 1px solid #e6d6fb; color: #4c3a66; }
+.plan-split { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  gap: 18px; align-items: start; }
 @media (max-width: 900px) {
+  .plan-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .plan-split { grid-template-columns: 1fr; }
   .upload-grid { grid-template-columns: 1fr; }
   .filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .field-search { grid-column: span 2; }
@@ -174,6 +241,16 @@ _DASH_CSS = """
   .upload-form .check-field { grid-column: auto; }
   .upload-form .actions { grid-column: auto; }
   .upload-note { grid-column: auto; }
+  .plan-grid { grid-template-columns: 1fr; }
+  .plan-grid .field-full { grid-column: auto; }
+  .plan-form .check-field { grid-column: auto; }
+  .plan-row-head { display: none; }
+  .cat-cols, .spend-cols { grid-template-columns: 1fr; }
+  .plan-row { padding: 10px 12px; border: 1px solid var(--line);
+    border-radius: 12px; background: #fcfaff; margin-bottom: 10px; }
+  .plan-row .row-no { display: none; }
+  .plan-row input, .plan-row select { font-size: 14px; }
+  .plan-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .filters { grid-template-columns: 1fr; }
   .field-search { grid-column: auto; }
   .filters .actions { grid-column: auto; }
@@ -182,7 +259,7 @@ _DASH_CSS = """
   .resultbar { align-items: flex-start; }
 }
 @media (max-width: 420px) {
-  .dash-cards { grid-template-columns: 1fr; }
+  .dash-cards, .plan-cards { grid-template-columns: 1fr; }
 }
 @media (prefers-reduced-motion: reduce) {
   .button { transition: none; }
@@ -322,14 +399,21 @@ def _document(
     )
 
 
-def _error_document(title: str, message: str, *, action_href: str = "/") -> str:
+def _error_document(
+    title: str,
+    message: str,
+    *,
+    action_href: str = "/",
+    action_label: str = "Back to the dashboard",
+    eyebrow: str = "Spending explorer",
+) -> str:
     body = f"""
 <main class="shell">
   <section class="panel error-page">
-    <p class="eyebrow">Spending explorer</p>
+    <p class="eyebrow">{escape_attr(eyebrow)}</p>
     <h2>{escape_attr(title)}</h2>
     <p>{escape_attr(message)}</p>
-    <p><a class="button primary" href="{escape_attr(action_href)}">Back to the dashboard</a></p>
+    <p><a class="button primary" href="{escape_attr(action_href)}">{escape_attr(action_label)}</a></p>
   </section>
 </main>
 """
@@ -1053,7 +1137,8 @@ def _hero(
     <p class="lede">Filter every clean transaction in {scope} and see the summary,
       monthly trend and breakdown update together. Every figure is a SQL result.</p>
     <div class="hero-actions">
-      <a class="button primary" href="#filters">Start filtering</a>
+      <a class="button primary" href="/plan">Plan my money</a>
+      <a class="button ghost" href="#filters">Start filtering</a>
       {report_link}
       <a class="button ghost" href="/upload">Analyze new data</a>
     </div>
@@ -1116,6 +1201,7 @@ def _footer(
       <code>{escape_attr(run.get("run_id", "none"))}</code> &middot; finished
       <code>{escape_attr(run.get("finished_at") or "not finished")}</code></p>
     <div class="footer-links">{report_note}
+      <a class="totop" href="/plan">Plan your own money</a>
       <a class="totop" href="/upload">Analyze another dataset</a>
       <a class="totop" href="#top">Back to top</a></div>
   </footer>"""
@@ -1294,6 +1380,7 @@ def render_upload_page(
       filterable dashboard. Nothing is uploaded to a remote service.</p>
     <div class="hero-actions">
       <a class="button primary" href="#upload-form">Upload a CSV</a>
+      <a class="button ghost" href="/plan">Plan my own money</a>
       {back_link}
     </div>
     <p class="disclaimer"><strong>Synthetic data only.</strong> Do not upload real
@@ -1356,18 +1443,617 @@ def render_upload_page(
   </div>
 
   <footer class="panel footer">
-    <p><strong>Local and read-only after loading.</strong> The upload endpoint is the only
-      write path; analysis pages open SQLite with <code>mode=ro</code>. There is no login,
-      so keep the server on loopback.</p>
+    <p><strong>Local and read-only after loading.</strong> The upload and money-plan
+      endpoints are the only write paths; analysis pages open SQLite with
+      <code>mode=ro</code>. There is no login, so keep the server on loopback.</p>
     <p class="meta-line">Student Spending Analytics &middot; synthetic data only</p>
     <div class="footer-links">
       <a class="totop" href="/">Open the sample dashboard</a>
+      <a class="totop" href="/plan">Plan your own money</a>
       <a class="totop" href="#top">Back to top</a>
     </div>
   </footer>
 </main>
 """
     return _document("Analyze data · Student Spending Analytics", body, skip_href=None)
+
+
+def _plan_error_banner(errors: list[str]) -> str:
+    if not errors:
+        return ""
+    items = "".join(f"<li>{escape_attr(error)}</li>" for error in errors)
+    return (
+        '<div class="banner bad" role="alert"><strong>Check these details.</strong>'
+        f'<ul class="error-list">{items}</ul></div>'
+    )
+
+
+def _category_row(number: int, row: object) -> str:
+    essential = bool(getattr(row, "essential", False))
+    return f"""
+      <div class="plan-row cat-cols">
+        <span class="row-no" aria-hidden="true">{number:02d}</span>
+        <input name="category_name_{number}" type="text" maxlength="{MAX_CATEGORY_NAME_LENGTH}"
+          value="{escape_attr(getattr(row, 'name', ''))}" placeholder="e.g. Food"
+          aria-label="Category {number} name" autocomplete="off">
+        <input name="category_amount_{number}" type="text" inputmode="decimal"
+          value="{escape_attr(getattr(row, 'planned', ''))}" placeholder="0.00"
+          aria-label="Category {number} planned amount in KES">
+        <select name="category_essential_{number}" aria-label="Category {number} type">
+          <option value="essential"{" selected" if essential else ""}>Essential</option>
+          <option value="flexible"{" selected" if not essential else ""}>Flexible</option>
+        </select>
+      </div>"""
+
+
+def _spending_row(number: int, row: object) -> str:
+    return f"""
+      <div class="plan-row spend-cols">
+        <span class="row-no" aria-hidden="true">{number:02d}</span>
+        <input name="spending_date_{number}" type="date"
+          value="{escape_attr(getattr(row, 'spent_on', ''))}"
+          aria-label="Spending row {number} date">
+        <input name="spending_category_{number}" type="text"
+          maxlength="{MAX_CATEGORY_NAME_LENGTH}"
+          value="{escape_attr(getattr(row, 'category', ''))}" placeholder="Your category"
+          aria-label="Spending row {number} category" autocomplete="off">
+        <input name="spending_amount_{number}" type="text" inputmode="decimal"
+          value="{escape_attr(getattr(row, 'amount', ''))}" placeholder="0.00"
+          aria-label="Spending row {number} amount in KES">
+        <input name="spending_note_{number}" type="text"
+          maxlength="{MAX_ENTRY_NOTE_LENGTH}"
+          value="{escape_attr(getattr(row, 'note', ''))}" placeholder="Optional note"
+          aria-label="Spending row {number} note" autocomplete="off">
+      </div>"""
+
+
+def render_plan_page(
+    *,
+    draft: PlanDraft | None = None,
+    errors: list[str] | None = None,
+    source: SavedPlan | None = None,
+) -> str:
+    draft = draft or PlanDraft()
+    errors = errors or []
+    category_rows = max(CATEGORY_ROWS, len(draft.categories))
+    spending_rows = max(SPENDING_ROWS, len(draft.spendings))
+    categories_html = "".join(
+        _category_row(number, draft.category(number))
+        for number in range(1, category_rows + 1)
+    )
+    spendings_html = "".join(
+        _spending_row(number, draft.spending(number))
+        for number in range(1, spending_rows + 1)
+    )
+    source_note = ""
+    if source is not None:
+        source_note = (
+            '<div class="banner note" role="status"><strong>Editing a copy.</strong> '
+            f"This form is filled from plan <code>{escape_attr(source.plan_id)}</code>. "
+            "Submitting saves a new link; the original plan stays unchanged.</div>"
+        )
+    back_link = (
+        f'<a class="button ghost" href="/plan?plan={escape_attr(source.plan_id)}">'
+        "Back to the saved result</a>"
+        if source is not None
+        else '<a class="button ghost" href="/">Explore the sample dataset</a>'
+    )
+    body = f"""
+<main class="shell">
+  <header class="hero dash-hero" id="top">
+    <p class="eyebrow">One student &middot; local money plan</p>
+    <h1>Plan your <span>money</span></h1>
+    <p class="lede">Enter the money you have, name your own categories, and record what
+      you actually spent. The analysis compares your plan with your entries and charts
+      where the money went.</p>
+    <div class="hero-actions">
+      <a class="button primary" href="#money">Start with the money</a>
+      {back_link}
+    </div>
+    <p class="disclaimer"><strong>Made-up numbers only.</strong> This is a learning tool.
+      Do not enter account numbers, card details or payment credentials. Nothing is sent
+      to a bank or a remote service; saved plans stay on this machine.</p>
+  </header>
+
+  <nav class="toc" aria-label="Money plan sections">
+    <a href="#money">Money</a><a href="#categories">Categories</a>
+    <a href="#spending">Spending</a><a href="#review">Review</a>
+  </nav>
+
+  {source_note}
+
+  <form class="plan-form" method="post" action="/plan" accept-charset="utf-8">
+    <section class="panel" id="money" aria-labelledby="money-title">
+      <p class="eyebrow"><span class="section-no">01</span> Money</p>
+      <h2 id="money-title">What you have and how you plan</h2>
+      <p class="lead">Start with a display name and the money available for the period
+        you are planning. The budgeting method is a label for your approach; the
+        category amounts are what the comparison uses.</p>
+      {_plan_error_banner(errors)}
+      <div class="plan-grid">
+        <div class="field">
+          <label for="student_name">Display name</label>
+          <input id="student_name" name="student_name" type="text"
+            maxlength="{MAX_NAME_LENGTH}" value="{escape_attr(draft.student_name)}"
+            placeholder="A nickname is fine" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="money_available">Money available (KES)</label>
+          <input id="money_available" name="money_available" type="text"
+            inputmode="decimal" value="{escape_attr(draft.money_available)}"
+            placeholder="e.g. 18,000">
+        </div>
+        {_select_field("method", "Budgeting method", draft.method,
+                       list(BUDGET_METHODS.items()))}
+        <div class="field field-full">
+          <label for="method_note">How you budget <span class="section-note">optional</span></label>
+          <textarea id="method_note" name="method_note"
+            maxlength="{MAX_METHOD_NOTE_LENGTH}"
+            placeholder="e.g. I split my money into weekly envelopes and put rent aside first.">{escape_attr(draft.method_note)}</textarea>
+        </div>
+      </div>
+      <p class="plan-section-note">Amounts are in KES. Commas and a decimal point are
+        fine: 18,000 or 18,000.50. This is the money you are planning with, not a bank
+        balance.</p>
+    </section>
+
+    <section class="panel" id="categories" aria-labelledby="categories-title">
+      <p class="eyebrow"><span class="section-no">02</span> Categories</p>
+      <h2 id="categories-title">Name your own categories</h2>
+      <p class="lead">There is no fixed category list: use the names you think in.
+        Add a planned amount if you have one, and mark each category Essential or
+        Flexible. Blank rows are ignored; at least two categories are needed.</p>
+      <div class="plan-rows">
+        <div class="plan-row-head cat-cols">
+          <span>#</span><span>Category name</span><span>Planned KES</span><span>Type</span>
+        </div>
+        {categories_html}
+      </div>
+      <p class="plan-section-note">Leaving Planned KES blank means zero for that
+        category. Spending in a category with a zero plan is still included, and the
+        analysis marks it as having no plan.</p>
+    </section>
+
+    <section class="panel" id="spending" aria-labelledby="spending-title">
+      <p class="eyebrow"><span class="section-no">03</span> Spending</p>
+      <h2 id="spending-title">What you actually spent</h2>
+      <p class="lead">One row per purchase or payment. Use a category name from above;
+        matching ignores capitalisation. Leave any row blank if you do not need it.</p>
+      <div class="plan-rows">
+        <div class="plan-row-head spend-cols">
+          <span>#</span><span>Date</span><span>Category</span>
+          <span>Amount KES</span><span>Note</span>
+        </div>
+        {spendings_html}
+      </div>
+      <p class="plan-section-note">At least one complete spending row is needed.
+        Dates use YYYY-MM-DD in the browser's date picker.</p>
+    </section>
+
+    <section class="panel" id="review" aria-labelledby="review-title">
+      <p class="eyebrow"><span class="section-no">04</span> Review</p>
+      <h2 id="review-title">Run the analysis</h2>
+      <p class="lead">The analysis adds up only the values in this form. It will show
+        your totals, every category against its plan, and graphs of where the money
+        went.</p>
+      <label class="check-field">
+        <input type="checkbox" name="synthetic" value="yes"{" checked" if draft.synthetic else ""} required>
+        <span><strong>These are made-up learning numbers.</strong> There are no real
+          student, account, card or payment details in this form.</span>
+      </label>
+      <div class="plan-actions">
+        <button class="button primary" type="submit">Run my analysis</button>
+        <a class="button ghost" href="/plan">Clear the form</a>
+        <span class="section-note">Saving creates a private result link on this machine.</span>
+      </div>
+      <p class="plan-section-note">Plans are stored as JSON under
+        <code>data/plans/</code>. They are not listed, mailed or sent anywhere, and
+        no login is involved. Keep the result link if you want to return.</p>
+    </section>
+  </form>
+
+  <footer class="panel footer">
+    <p><strong>Local by design.</strong> The form is validated on the server, amounts
+      are stored as integer cents, and the result page only reads the saved plan. There
+      is no bank connection and no credential field anywhere.</p>
+    <p class="meta-line">Student Spending Analytics &middot; money plan &middot;
+      made-up numbers only</p>
+    <div class="footer-links">
+      <a class="totop" href="/">Explore the sample dataset</a>
+      <a class="totop" href="/upload">Analyze a transactions CSV</a>
+      <a class="totop" href="#top">Back to top</a>
+    </div>
+  </footer>
+</main>
+"""
+    return _document("Plan your money · Student Spending Analytics", body, skip_href=None)
+
+
+def _plan_summary(plan: object, analysis: object) -> str:
+    return (
+        f"{plan.student_name} has KES {money(analysis.money_available_cents / 100)} "
+        f"available, planned KES {money(analysis.planned_cents / 100)} across "
+        f"{integer(len(plan.categories))} categories, and recorded "
+        f"{integer(len(plan.spendings))} spending entries totalling "
+        f"KES {money(analysis.spent_cents / 100)}."
+    )
+
+
+def _plan_cards(plan: object, analysis: object) -> str:
+    if analysis.planned_cents:
+        planned_hint = (
+            f"{integer(len(plan.categories))} categories · "
+            f"{percent(analysis.planned_share_pct)} of available"
+        )
+    else:
+        planned_hint = f"{integer(len(plan.categories))} categories · no planned amounts"
+    remaining = analysis.remaining_cents
+    left_value = (
+        f"KES {money(remaining / 100)}"
+        if remaining >= 0
+        else f"-KES {money(-remaining / 100)}"
+    )
+    cards = [
+        ("Money available", f"KES {money(analysis.money_available_cents / 100)}",
+         "the amount you entered"),
+        ("Planned", f"KES {money(analysis.planned_cents / 100)}", planned_hint),
+        ("Spent", f"KES {money(analysis.spent_cents / 100)}",
+         f"{integer(len(plan.spendings))} entries · "
+         f"{percent(analysis.spent_share_pct)} of available"),
+        ("Left", left_value,
+         "still unspent" if remaining >= 0 else "more than available"),
+    ]
+    cells = "".join(
+        f'<div class="card"><div class="label">{escape_attr(label)}</div>'
+        f'<div class="value">{escape_attr(value)}</div>'
+        f'<div class="hint">{escape_attr(hint)}</div></div>'
+        for label, value, hint in cards
+    )
+    return f'<div class="cards plan-cards">{cells}</div>'
+
+
+def _plan_banners(plan: object, analysis: object) -> str:
+    banners: list[tuple[str, str, str]] = []
+    if analysis.remaining_cents > 0:
+        banners.append(
+            ("good", "Money available",
+             f"KES {money(analysis.remaining_cents / 100)} of the money available is still unspent.")
+        )
+    elif analysis.remaining_cents == 0:
+        banners.append(
+            ("good", "Money available",
+             "Recorded spending uses exactly the money available.")
+        )
+    else:
+        banners.append(
+            ("bad", "Money available",
+             f"Recorded spending is KES {money(-analysis.remaining_cents / 100)} more than the money available.")
+        )
+    if analysis.planned_cents == 0:
+        banners.append(
+            ("note", "Plan",
+             "No planned amounts were entered, so this analysis compares actual spending only.")
+        )
+    elif analysis.unallocated_cents < 0:
+        banners.append(
+            ("bad", "Plan",
+             f"The plan allocates KES {money(-analysis.unallocated_cents / 100)} more than the money available.")
+        )
+    elif analysis.unallocated_cents == 0:
+        banners.append(
+            ("good", "Plan", "The plan allocates exactly the money available.")
+        )
+    else:
+        banners.append(
+            ("note", "Plan",
+             f"The plan leaves KES {money(analysis.unallocated_cents / 100)} unallocated; it can be a buffer.")
+        )
+    return "".join(
+        f'<div class="banner {kind}" role="status"><strong>{escape_attr(label)}.</strong> '
+        f"{escape_attr(text)}</div>"
+        for kind, label, text in banners
+    )
+
+
+def _names(items: list | tuple, limit: int = 4) -> str:
+    names = [item.name for item in items]
+    if len(names) > limit:
+        return ", ".join(names[:limit]) + f" and {len(names) - limit} more"
+    return ", ".join(names)
+
+
+def _plan_insights(plan: object, analysis: object) -> str:
+    items: list[str] = []
+    biggest = analysis.ranked_categories[0]
+    if biggest.spent_cents:
+        items.append(
+            f"{biggest.name} is the largest category: "
+            f"KES {money(biggest.spent_cents / 100)} "
+            f"({percent(biggest.share_pct)} of recorded spending)."
+        )
+    if analysis.over_plan:
+        over_total = sum(
+            item.spent_cents - item.planned_cents for item in analysis.over_plan
+        )
+        count = len(analysis.over_plan)
+        verb = "category is" if count == 1 else "categories are"
+        items.append(
+            f"{count} {verb} over plan by "
+            f"KES {money(over_total / 100)} in total: "
+            f"{_names(analysis.over_plan)}."
+        )
+    elif analysis.planned_cents:
+        items.append("Every category with a planned amount is at or under its plan.")
+    if analysis.unplanned:
+        unplanned_total = sum(item.spent_cents for item in analysis.unplanned)
+        items.append(
+            f"KES {money(unplanned_total / 100)} of spending has no planned amount: "
+            f"{_names(analysis.unplanned)}."
+        )
+    if analysis.planned_cents:
+        essential_plan_share = 100.0 * analysis.essential_planned_cents / analysis.planned_cents
+        items.append(
+            f"Essential categories are {percent(analysis.essential_share_pct)} of "
+            f"spending (KES {money(analysis.essential_spent_cents / 100)}) and "
+            f"{percent(essential_plan_share)} of the plan "
+            f"(KES {money(analysis.essential_planned_cents / 100)})."
+        )
+    else:
+        items.append(
+            f"Essential categories are {percent(analysis.essential_share_pct)} of "
+            f"spending (KES {money(analysis.essential_spent_cents / 100)})."
+        )
+    day_word = "day" if analysis.days_covered == 1 else "days"
+    active_word = "day" if analysis.active_days == 1 else "days"
+    items.append(
+        f"Your entries cover {integer(analysis.days_covered)} {day_word} "
+        f"({integer(analysis.active_days)} {active_word} with spending), averaging "
+        f"KES {money(analysis.average_daily_cents / 100)} per day."
+    )
+    if analysis.planned_cents and analysis.unallocated_cents > 0:
+        items.append(
+            f"KES {money(analysis.unallocated_cents / 100)} of the money available is "
+            "not assigned to a category plan yet."
+        )
+    list_html = "".join(f"<li>{escape_attr(item)}</li>" for item in items)
+    return f'<ul class="insight-list">{list_html}</ul>'
+
+
+def _plan_category_panel(plan: object, analysis: object) -> str:
+    actual_items = [
+        {"category": item.name, "spent_kes": item.spent_cents / 100}
+        for item in analysis.ranked_categories
+        if item.spent_cents
+    ]
+    compare_items = [
+        {
+            "category": item.name,
+            "planned_kes": item.planned_cents / 100,
+            "spent_kes": item.spent_cents / 100,
+        }
+        for item in analysis.ranked_categories
+        if item.planned_cents or item.spent_cents
+    ]
+    actual_chart = bar_chart(
+        actual_items,
+        "category",
+        "spent_kes",
+        title="Spending by category",
+        gradient_id="plan-actual",
+    )
+    compare_chart = grouped_bar_chart(
+        compare_items,
+        "category",
+        [
+            ("planned_kes", "Planned", "#c4b5fd", "#a78bfa"),
+            ("spent_kes", "Spent", "#7c3aed", "#d946ef"),
+        ],
+        title="Planned and actual spending by category",
+        gradient_prefix="plan-compare",
+    )
+
+    pill_classes = {
+        "Under plan": "pass",
+        "On plan": "pass",
+        "Over plan": "fail",
+        "No plan": "warn",
+        "Not used": "neutral",
+        "No activity": "neutral",
+    }
+    rows: list[list[str]] = []
+    row_classes: list[str] = []
+    for item in analysis.categories:
+        if item.difference_cents < 0:
+            difference = f"-{money(-item.difference_cents / 100)}"
+        else:
+            difference = money(item.difference_cents / 100)
+        category = (
+            f"{escape_attr(item.name)}"
+            f'<span class="plan-tag">{"Essential" if item.essential else "Flexible"}</span>'
+        )
+        rows.append(
+            [
+                category,
+                money(item.planned_cents / 100),
+                money(item.spent_cents / 100),
+                difference,
+                share_cell(item.share_pct),
+                f'<span class="pill {pill_classes[item.status]}">'
+                f"{escape_attr(item.status)}</span>",
+            ]
+        )
+        row_classes.append("over" if item.flagged else "")
+
+    essential_rows = [
+        ["Essential", money(analysis.essential_planned_cents / 100),
+         money(analysis.essential_spent_cents / 100),
+         share_cell(analysis.essential_share_pct)],
+        ["Flexible", money(analysis.flexible_planned_cents / 100),
+         money(analysis.flexible_spent_cents / 100),
+         share_cell(100.0 - analysis.essential_share_pct)],
+    ]
+    return f"""
+  <section class="panel" id="categories" aria-labelledby="categories-title">
+    <p class="eyebrow"><span class="section-no">02</span> Categories</p>
+    <h2 id="categories-title">Where the money went</h2>
+    <p class="lead">The first graph ranks your own categories by actual spending. The
+      second puts each category's plan next to its actual spend on the same scale.</p>
+    <h3>Spending by category</h3>
+    {actual_chart}
+    <h3>Plan next to actual</h3>
+    {compare_chart}
+    <h3>The numbers by category</h3>
+    {table([("Category", False), ("Planned KES", True), ("Spent KES", True),
+            ("Planned minus spent", True), ("Share of spending", True),
+            ("Status", False)], rows, row_classes=row_classes)}
+    <div class="plan-split">
+      <div>
+        <h3>Essential and flexible</h3>
+        <p class="section-note">The split you chose while entering the categories.</p>
+        {table([("Bucket", False), ("Planned KES", True), ("Spent KES", True),
+                ("Share of spending", True)], essential_rows)}
+      </div>
+      <div>
+        <h3>How to read it</h3>
+        <p class="section-note">Planned minus spent is positive when a category still
+          has money and negative when it is over. "No plan" means spending was recorded
+          against a category with a zero planned amount. "Not used" is a planned category
+          with no entries. Every figure comes from the values in this saved plan.</p>
+      </div>
+    </div>
+  </section>"""
+
+
+def _plan_spending_panel(plan: object, analysis: object) -> str:
+    entries = sorted(
+        plan.spendings,
+        key=lambda entry: (entry.spent_on, entry.category, entry.amount_cents),
+        reverse=True,
+    )
+    rows = [
+        [
+            escape_attr(entry.spent_on.isoformat()),
+            escape_attr(entry.category),
+            escape_attr(entry.note or "—"),
+            money(entry.amount_cents / 100),
+        ]
+        for entry in entries
+    ]
+    return f"""
+  <section class="panel" id="spending" aria-labelledby="spending-title">
+    <p class="eyebrow"><span class="section-no">03</span> Entries</p>
+    <h2 id="spending-title">The spending behind the totals</h2>
+    <p class="lead">Newest first. These rows are the source of every category total and
+      graph above.</p>
+    <div class="table-meta">
+      <span>{integer(len(rows))} entries</span>
+      <span>KES {money(analysis.spent_cents / 100)} total</span>
+      <span>{escape_attr(analysis.first_date.isoformat())} to
+        {escape_attr(analysis.last_date.isoformat())}</span>
+    </div>
+    {table([("Date", False), ("Category", False), ("Note", False),
+            ("Amount KES", True)], rows)}
+  </section>"""
+
+
+def _plan_method_panel(saved: SavedPlan) -> str:
+    method_label = BUDGET_METHODS[saved.plan.method]
+    note = (
+        f'<p class="method-note">{escape_attr(saved.plan.method_note)}</p>'
+        if saved.plan.method_note
+        else '<p class="section-note">No budgeting note was added.</p>'
+    )
+    return f"""
+  <section class="panel" id="method" aria-labelledby="method-title">
+    <p class="eyebrow"><span class="section-no">04</span> Method</p>
+    <h2 id="method-title">How you planned</h2>
+    <p class="plan-meta">
+      <span>Method: <strong>{escape_attr(method_label)}</strong></span>
+      <span>Saved: <strong>{escape_attr(_format_created(saved.created_at))}</strong></span>
+      <span>Plan id: <code>{escape_attr(saved.plan_id)}</code></span>
+    </p>
+    {note}
+    <p class="lead">The analysis does not score your budgeting method or recommend
+      financial products. It only compares the categories and amounts you entered with
+      the spending entries you recorded.</p>
+    <div class="plan-actions">
+      <a class="button primary" href="/plan?edit={escape_attr(saved.plan_id)}">Edit as a copy</a>
+      <a class="button ghost" href="/plan">Start a new plan</a>
+    </div>
+    <p class="plan-section-note">Stored as <code>data/plans/{escape_attr(saved.plan_id)}.json</code>
+      on this machine. Plans are not listed anywhere, so this result link is the only
+      way back to it.</p>
+  </section>"""
+
+
+def render_plan_result(saved: SavedPlan) -> str:
+    plan = saved.plan
+    analysis = analyse(plan)
+    method_label = BUDGET_METHODS[plan.method]
+    summary = _plan_summary(plan, analysis)
+    body = f"""
+<main class="shell">
+  <header class="hero dash-hero" id="top">
+    <p class="eyebrow">Saved money plan &middot; local only</p>
+    <h1>Money map for <span>{escape_attr(plan.student_name)}</span></h1>
+    <p class="lede">{escape_attr(summary)}</p>
+    <div class="hero-actions">
+      <a class="button primary" href="#summary">See the analysis</a>
+      <a class="button ghost" href="/plan?edit={escape_attr(saved.plan_id)}">Edit as a copy</a>
+      <a class="button ghost" href="/plan">Start a new plan</a>
+    </div>
+    <ul class="chips">
+      <li><span class="chip-key">Method</span>{escape_attr(method_label)}</li>
+      <li><span class="chip-key">Categories</span>{integer(len(plan.categories))}</li>
+      <li><span class="chip-key">Entries</span>{integer(len(plan.spendings))}</li>
+      <li><span class="chip-key">Saved</span>{escape_attr(_format_created(saved.created_at))}</li>
+      <li><span class="chip-key">Plan link</span><code>{escape_attr(saved.plan_id)}</code></li>
+    </ul>
+    <p class="disclaimer"><strong>Made-up numbers only.</strong> This page compares
+      values typed into the form. It never connects to a bank, card or payment account
+      and stores nothing outside this machine.</p>
+  </header>
+
+  <nav class="toc" aria-label="Money plan result sections">
+    <a href="#summary">Summary</a><a href="#categories">Categories</a>
+    <a href="#spending">Entries</a><a href="#method">Method</a>
+  </nav>
+
+  <section class="panel" id="summary" aria-labelledby="summary-title">
+    <p class="eyebrow"><span class="section-no">01</span> Analysis</p>
+    <h2 id="summary-title">What the numbers say</h2>
+    <p class="lead">{escape_attr(summary)}</p>
+    {_plan_cards(plan, analysis)}
+    {_plan_banners(plan, analysis)}
+    <h3>What stands out</h3>
+    {_plan_insights(plan, analysis)}
+  </section>
+
+  {_plan_category_panel(plan, analysis)}
+  {_plan_spending_panel(plan, analysis)}
+  {_plan_method_panel(saved)}
+
+  <footer class="panel footer">
+    <p><strong>Local and private by default.</strong> This plan is a JSON file on this
+      machine. There is no account, no bank connection and no place to enter a card or
+      payment credential.</p>
+    <p class="section-note">The link for this plan is
+      <code>/plan?plan={escape_attr(saved.plan_id)}</code>. Plans are not listed, so keep
+      the link if you want to return. Delete <code>data/plans/</code> to clear saved
+      plans.</p>
+    <p class="meta-line">Student Spending Analytics &middot; money plan &middot;
+      saved {escape_attr(_format_created(saved.created_at))}</p>
+    <div class="footer-links">
+      <a class="totop" href="/plan?edit={escape_attr(saved.plan_id)}">Edit as a copy</a>
+      <a class="totop" href="/">Explore the sample dashboard</a>
+      <a class="totop" href="#top">Back to top</a>
+    </div>
+  </footer>
+</main>
+"""
+    return _document(
+        f"{plan.student_name} · Money plan · Student Spending Analytics", body
+    )
 
 
 def connect_readonly(db_path: Path) -> sqlite3.Connection:
@@ -1391,7 +2077,7 @@ class DashboardServer(ThreadingHTTPServer):
 
 class DashboardHandler(BaseHTTPRequestHandler):
     server: DashboardServer
-    server_version = "StudentSpendingDashboard/1.3"
+    server_version = "StudentSpendingDashboard/1.4"
     sys_version = ""
     timeout = 30
 
@@ -1405,23 +2091,28 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self._dispatch(head_only=True)
 
     def do_POST(self) -> None:  # noqa: N802 - required by http.server
-        if urllib.parse.urlsplit(self.path).path == "/upload":
-            try:
+        path = urllib.parse.urlsplit(self.path).path
+        try:
+            if path == "/upload":
                 self._create_analysis()
-            except Exception:  # noqa: BLE001 - one bad upload must not stop the server
-                logger.exception("unexpected upload failure")
-                self._safe_send(
-                    HTTPStatus.INTERNAL_SERVER_ERROR,
-                    _error_document(
-                        "The analysis could not be started",
-                        "An unexpected error interrupted the upload. Check the server "
-                        "log, then try again.",
-                        action_href="/upload",
-                    ),
-                    head_only=False,
-                )
-        else:
-            self._method_not_allowed()
+            elif path == "/plan":
+                self._create_plan()
+            else:
+                self._method_not_allowed()
+        except Exception:  # noqa: BLE001 - one bad request must not stop the server
+            logger.exception("unexpected POST failure for %s", path)
+            action = "/plan" if path == "/plan" else "/upload"
+            self._safe_send(
+                HTTPStatus.INTERNAL_SERVER_ERROR,
+                _error_document(
+                    "The request could not be completed",
+                    "An unexpected error interrupted this request. Check the server "
+                    "log, then try again.",
+                    action_href=action,
+                    action_label="Back to the form",
+                ),
+                head_only=False,
+            )
 
     do_PUT = do_POST
     do_PATCH = do_POST
@@ -1430,7 +2121,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
     def _method_not_allowed(self) -> None:
         body = _error_document(
             "Read-only dashboard",
-            "This dashboard only answers GET requests. Use the filter form to explore the data.",
+            "This address only answers GET requests. Use the filter form on the "
+            "dashboard, or submit the money-plan form from /plan.",
         )
         self._send(HTTPStatus.METHOD_NOT_ALLOWED, body,
                    headers=[("Allow", "GET, HEAD")])
@@ -1468,6 +2160,110 @@ class DashboardHandler(BaseHTTPRequestHandler):
             current_analysis=current,
         )
         self._send(HTTPStatus.OK, body, head_only=head_only)
+
+    def _plan_page(self, query: dict[str, list[str]], *, head_only: bool) -> None:
+        plan_id = _first(query, "plan")
+        edit_id = _first(query, "edit")
+        if plan_id:
+            saved = load_plan(plan_id)
+            if saved is None:
+                self._send(
+                    HTTPStatus.NOT_FOUND,
+                    _error_document(
+                        "Plan not found",
+                        "That saved plan is not available. It may have been removed, "
+                        "or the link may be incomplete.",
+                        action_href="/plan",
+                        action_label="Start a new plan",
+                        eyebrow="Money plan",
+                    ),
+                    head_only=head_only,
+                )
+                return
+            body = render_plan_result(saved)
+        elif edit_id:
+            saved = load_plan(edit_id)
+            if saved is None:
+                self._send(
+                    HTTPStatus.NOT_FOUND,
+                    _error_document(
+                        "Plan not found",
+                        "That saved plan cannot be edited because it is not available.",
+                        action_href="/plan",
+                        action_label="Start a new plan",
+                        eyebrow="Money plan",
+                    ),
+                    head_only=head_only,
+                )
+                return
+            body = render_plan_page(draft=plan_to_draft(saved.plan), source=saved)
+        else:
+            body = render_plan_page()
+        self._send(HTTPStatus.OK, body, head_only=head_only)
+
+    def _create_plan(self) -> None:
+        if not self._same_origin():
+            self._send(
+                HTTPStatus.FORBIDDEN,
+                _error_document(
+                    "Request blocked",
+                    "Money plans must be submitted from this dashboard's own form.",
+                    action_href="/plan",
+                    action_label="Back to the money plan",
+                    eyebrow="Money plan",
+                ),
+            )
+            return
+        try:
+            body = self._read_plan_body()
+            form = parse_form(self.headers.get("Content-Type", ""), body)
+        except PlanRequestError as error:
+            logger.info("plan request rejected: %s", error)
+            self._send(
+                error.status,
+                _error_document(
+                    "Plan not accepted",
+                    str(error),
+                    action_href="/plan",
+                    action_label="Back to the money plan",
+                    eyebrow="Money plan",
+                ),
+            )
+            return
+
+        draft = read_draft(form)
+        plan, errors = validate_draft(draft)
+        if plan is None:
+            self._send(
+                HTTPStatus.UNPROCESSABLE_ENTITY,
+                render_plan_page(draft=draft, errors=errors),
+            )
+            return
+
+        saved = save_plan(plan)
+        location = "/plan?" + urllib.parse.urlencode({"plan": saved.plan_id})
+        self._send(HTTPStatus.SEE_OTHER, "", headers=[("Location", location)])
+
+    def _read_plan_body(self) -> bytes:
+        raw_length = self.headers.get("Content-Length")
+        if raw_length is None:
+            raise PlanRequestError(
+                "The browser did not send a Content-Length header.", status=411
+            )
+        try:
+            length = int(raw_length)
+        except ValueError:
+            raise PlanRequestError("The form length is not valid.") from None
+        if length <= 0:
+            raise PlanRequestError("The plan form was empty.")
+        if length > MAX_PLAN_REQUEST_BYTES:
+            raise PlanRequestError(
+                "The plan form is larger than the allowed limit.", status=413
+            )
+        body = self.rfile.read(length)
+        if len(body) != length:
+            raise PlanRequestError("The form ended before all bytes arrived.")
+        return body
 
     def _create_analysis(self) -> None:
         if not self._same_origin():
@@ -1602,6 +2398,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self._page(query, head_only=head_only)
             elif path == "/upload":
                 self._upload_page(query, head_only=head_only)
+            elif path == "/plan":
+                self._plan_page(query, head_only=head_only)
             elif path == "/export.csv":
                 self._export(query, head_only=head_only)
             elif path == "/report":

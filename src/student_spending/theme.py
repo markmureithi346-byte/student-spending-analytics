@@ -144,7 +144,12 @@ tr.over td:last-child { color: var(--danger); font-weight: 700; }
 .chart text { font-family: inherit; font-size: 12px; fill: #4c3a66; }
 .chart .bar-label { fill: #4c3a66; }
 .chart .bar-value { fill: #7c6a9a; font-variant-numeric: tabular-nums; }
+.chart .bar-value.small { font-size: 10.5px; }
 .chart .guide { stroke: #ece6f7; stroke-width: 1; }
+.chart-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 0 0 10px;
+                font-size: 12.5px; color: var(--muted); }
+.chart-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.chart-legend i { display: inline-block; width: 20px; height: 8px; border-radius: 999px; }
 footer.footer { margin: 4px 0 0; }
 .footer p { margin: 0 0 8px; color: var(--muted); font-size: 13px; }
 .footer strong { color: var(--ink); }

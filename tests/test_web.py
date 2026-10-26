@@ -17,7 +17,7 @@ import urllib.request
 from pathlib import Path
 from unittest import mock
 
-from student_spending import cli, config, database, platform, web
+from student_spending import cli, config, database, personal, platform, web
 
 REPORT_SENTINEL = "<!DOCTYPE html><html><body>REPORT SENTINEL</body></html>"
 LOADED_AT = "2026-09-30T12:00:00+00:00"
@@ -939,6 +939,380 @@ class UploadPlatformTests(unittest.TestCase):
         _, _, history = self.fetch("/upload")
         self.assertIn("&lt;script&gt;alert", history)
         self.assertNotIn("<script>alert", history)
+
+
+class MoneyPlanTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls._tmp = tempfile.TemporaryDirectory()
+        cls.root = Path(cls._tmp.name)
+        cls.db_path = cls.root / "fixture.db"
+        _seed(cls.db_path)
+        cls.report_path = cls.root / "baseline_report.html"
+        cls.report_path.write_text(REPORT_SENTINEL, encoding="utf-8")
+        cls._config_patch = mock.patch.object(
+            config, "PLAN_DATA_DIR", cls.root / "plans"
+        )
+        cls._config_patch.start()
+        cls.server = web.create_server(
+            cls.db_path, port=0, report_path=cls.report_path
+        )
+        cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
+        cls.thread.start()
+        cls.port = cls.server.server_address[1]
+        cls.base = f"http://127.0.0.1:{cls.port}"
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls.server.shutdown()
+        cls.server.server_close()
+        cls.thread.join(timeout=5)
+        cls._config_patch.stop()
+        cls._tmp.cleanup()
+
+    def fetch(self, path: str, *, method: str = "GET") -> tuple[int, dict, str]:
+        request = urllib.request.Request(self.base + path, method=method)
+        try:
+            with urllib.request.urlopen(request, timeout=10) as response:
+                return (
+                    response.status,
+                    dict(response.headers.items()),
+                    response.read().decode("utf-8"),
+                )
+        except urllib.error.HTTPError as error:
+            return error.code, dict(error.headers.items()), error.read().decode("utf-8")
+
+    def post_form(
+        self,
+        fields: list[tuple[str, str]],
+        *,
+        headers: dict[str, str] | None = None,
+        content_type: str = "application/x-www-form-urlencoded",
+        raw_body: bytes | None = None,
+        path: str = "/plan",
+    ) -> tuple[int, dict, str]:
+        body = (
+            raw_body
+            if raw_body is not None
+            else urllib.parse.urlencode(fields).encode("utf-8")
+        )
+        connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
+        try:
+            request_headers = {"Content-Type": content_type}
+            request_headers.update(headers or {})
+            connection.request("POST", path, body=body, headers=request_headers)
+            response = connection.getresponse()
+            payload = response.read()
+            return (
+                response.status,
+                {name.lower(): value for name, value in response.getheaders()},
+                payload.decode("utf-8", "replace"),
+            )
+        finally:
+            connection.close()
+
+    @staticmethod
+    def plan_fields(
+        *,
+        name: str = "Amina",
+        money: str = "14000",
+        method: str = "envelope",
+        note: str = "Weekly envelopes; rent first.",
+        categories: tuple[tuple[str, str, str], ...] = (
+            ("Rent", "6000", "essential"),
+            ("Food", "5000", "essential"),
+            ("Fun", "1500", "flexible"),
+            ("Books", "", "flexible"),
+            ("Savings", "1000", "essential"),
+        ),
+        spendings: tuple[tuple[str, str, str, str], ...] = (
+            ("2026-10-01", "Rent", "6000", "October rent"),
+            ("2026-10-02", "Food", "3000", "Groceries"),
+            ("2026-10-02", "Food", "1500", "Lunch"),
+            ("2026-10-04", "Fun", "1800", "Concert"),
+            ("2026-10-04", "Books", "200", "Notebook"),
+        ),
+        synthetic: str | None = "yes",
+    ) -> list[tuple[str, str]]:
+        fields = [
+            ("student_name", name),
+            ("money_available", money),
+            ("method", method),
+            ("method_note", note),
+        ]
+        for number, (category_name, planned, kind) in enumerate(categories, start=1):
+            fields.extend(
+                [
+                    (f"category_name_{number}", category_name),
+                    (f"category_amount_{number}", planned),
+                    (f"category_essential_{number}", kind),
+                ]
+            )
+        for number, (spent_on, category, amount, entry_note) in enumerate(
+            spendings, start=1
+        ):
+            fields.extend(
+                [
+                    (f"spending_date_{number}", spent_on),
+                    (f"spending_category_{number}", category),
+                    (f"spending_amount_{number}", amount),
+                    (f"spending_note_{number}", entry_note),
+                ]
+            )
+        if synthetic is not None:
+            fields.append(("synthetic", synthetic))
+        return fields
+
+    def create_plan(
+        self, fields: list[tuple[str, str]] | None = None
+    ) -> str:
+        status, headers, page = self.post_form(fields or self.plan_fields())
+        self.assertEqual(status, 303, page[:300])
+        match = re.fullmatch(
+            r"/plan\?plan=(p-[A-Za-z0-9_-]{16})", headers.get("location", "")
+        )
+        self.assertIsNotNone(match, headers.get("location"))
+        return match.group(1)
+
+    def plan_files(self) -> set[str]:
+        root = Path(config.PLAN_DATA_DIR)
+        if not root.is_dir():
+            return set()
+        return {entry.name for entry in root.glob("*.json")}
+
+    def test_plan_page_and_entry_points(self) -> None:
+        status, _, page = self.fetch("/plan")
+        self.assertEqual(status, 200)
+        for control in (
+            "student_name",
+            "money_available",
+            "method",
+            "method_note",
+            "synthetic",
+            "category_name_1",
+            "category_name_12",
+            "spending_date_24",
+        ):
+            self.assertIn(f'name="{control}"', page)
+        self.assertIn('action="/plan"', page)
+        self.assertIn("There is no fixed category list", page)
+        self.assertIn("Made-up numbers only.", page)
+        self.assertIn('href="/upload"', page)
+
+        _, _, home = self.fetch("/")
+        self.assertIn('href="/plan"', home)
+        self.assertIn("Plan my money", home)
+
+        _, _, upload_page = self.fetch("/upload")
+        self.assertIn('href="/plan"', upload_page)
+
+        status, headers, body = self.fetch("/plan", method="HEAD")
+        self.assertEqual(status, 200)
+        self.assertEqual(body, "")
+        self.assertGreater(int(headers["Content-Length"]), 0)
+
+    def test_plan_submission_is_saved_and_bookmarkable(self) -> None:
+        plan_id = self.create_plan()
+        path = Path(config.PLAN_DATA_DIR) / f"{plan_id}.json"
+        self.assertTrue(path.is_file())
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual(payload["version"], 1)
+        self.assertEqual(payload["plan_id"], plan_id)
+        self.assertEqual(payload["student_name"], "Amina")
+        self.assertEqual(payload["money_available_cents"], 1_400_000)
+        self.assertEqual(payload["categories"][0]["name"], "Rent")
+        self.assertEqual(payload["spendings"][0]["amount_cents"], 600_000)
+
+        status, headers, page = self.fetch(f"/plan?plan={plan_id}")
+        self.assertEqual(status, 200)
+        self.assertEqual(headers["Cache-Control"], "no-store")
+        for text in (
+            "Money map for <span>Amina</span>",
+            "KES 14,000.00",
+            "KES 13,500.00",
+            "KES 12,500.00",
+            "KES 1,500.00",
+            "plan-actual",
+            "plan-compare",
+            "Over plan",
+            "No plan",
+            "Not used",
+            "October rent",
+            "Weekly envelopes; rent first.",
+            "Essential",
+            "Flexible",
+            "1 category is over plan by KES 300.00 in total: Fun.",
+        ):
+            self.assertIn(text, page)
+
+        self.assertIn(f"/plan?edit={plan_id}", page)
+        self.assertIn("data/plans/", page)
+
+        _, _, form_page = self.fetch("/plan")
+        self.assertNotIn(plan_id, form_page)
+        self.assertNotIn("Amina", form_page)
+
+    def test_edit_prefills_and_saves_a_copy(self) -> None:
+        first = self.create_plan()
+        status, _, edit_page = self.fetch(f"/plan?edit={first}")
+        self.assertEqual(status, 200)
+        self.assertIn("Editing a copy", edit_page)
+        self.assertIn('value="Amina"', edit_page)
+        self.assertIn('value="Rent"', edit_page)
+        self.assertIn('value="6000.00"', edit_page)
+        self.assertIn('name="synthetic" value="yes" checked', edit_page)
+        self.assertIn(f"/plan?plan={first}", edit_page)
+
+        second = self.create_plan(self.plan_fields(name="Amina Updated"))
+        self.assertNotEqual(first, second)
+        self.assertTrue((Path(config.PLAN_DATA_DIR) / f"{first}.json").is_file())
+        self.assertTrue((Path(config.PLAN_DATA_DIR) / f"{second}.json").is_file())
+
+        _, _, first_page = self.fetch(f"/plan?plan={first}")
+        self.assertIn("Amina", first_page)
+        self.assertNotIn("Amina Updated", first_page)
+        _, _, second_page = self.fetch(f"/plan?plan={second}")
+        self.assertIn("Amina Updated", second_page)
+
+    def test_validation_errors_preserve_input_and_save_nothing(self) -> None:
+        before = self.plan_files()
+        cases = [
+            (self.plan_fields(synthetic=None), "Confirm that the numbers are made up"),
+            (
+                self.plan_fields(categories=(("Food", "1000", "essential"),)),
+                "Add at least two categories with names.",
+            ),
+            (
+                self.plan_fields(
+                    spendings=(("2026-10-01", "Groceries", "100", ""),)
+                ),
+                "not one of your categories",
+            ),
+            (self.plan_fields(money="bad"), "must be a number"),
+        ]
+        for fields, message in cases:
+            with self.subTest(message=message):
+                status, _, page = self.post_form(fields)
+                self.assertEqual(status, 422)
+                self.assertIn(message, page)
+                self.assertIn('value="Amina"', page)
+                self.assertIn("Check these details.", page)
+        self.assertEqual(self.plan_files(), before)
+
+    def test_invalid_links_and_tampered_stored_plans(self) -> None:
+        for path in (
+            "/plan?plan=../../etc/passwd",
+            "/plan?plan=p-short",
+            "/plan?edit=p-short",
+        ):
+            with self.subTest(path=path):
+                status, _, page = self.fetch(path)
+                self.assertEqual(status, 404)
+                self.assertIn("Plan not found", page)
+
+        plan_id = self.create_plan()
+        path = Path(config.PLAN_DATA_DIR) / f"{plan_id}.json"
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload["categories"][0]["planned_cents"] = -5
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        status, _, page = self.fetch(f"/plan?plan={plan_id}")
+        self.assertEqual(status, 404)
+        self.assertIn("Plan not found", page)
+
+    def test_request_guards(self) -> None:
+        fields = self.plan_fields()
+
+        status, _, page = self.post_form(
+            fields, headers={"Origin": "http://evil.example"}
+        )
+        self.assertEqual(status, 403)
+        self.assertIn("own form", page)
+
+        status, _, _ = self.post_form(
+            fields, headers={"Sec-Fetch-Site": "cross-site"}
+        )
+        self.assertEqual(status, 403)
+
+        status, _, page = self.post_form(
+            [], content_type="application/json", raw_body=b"{}"
+        )
+        self.assertEqual(status, 415)
+        self.assertIn("own form", page)
+
+        status, _, page = self.post_form([], raw_body=b"")
+        self.assertEqual(status, 400)
+        self.assertIn("plan form was empty", page)
+
+        status, _, page = self.post_form(
+            fields,
+            headers={
+                "Content-Length": str(personal.MAX_PLAN_REQUEST_BYTES + 1)
+            },
+        )
+        self.assertEqual(status, 413)
+        self.assertIn("larger than the allowed limit", page)
+
+        with socket.create_connection(("127.0.0.1", self.port), timeout=10) as sock:
+            sock.sendall(
+                b"POST /plan HTTP/1.1\r\nHost: 127.0.0.1\r\n"
+                b"Content-Type: application/x-www-form-urlencoded\r\n"
+                b"Connection: close\r\n\r\n"
+            )
+            raw = b""
+            while True:
+                chunk = sock.recv(65536)
+                if not chunk:
+                    break
+                raw += chunk
+        self.assertIn(b" 411 ", raw.split(b"\r\n", 1)[0])
+        self.assertIn(b"Content-Length header", raw)
+
+        status, headers, page = self.post_form(fields, path="/missing-page")
+        self.assertEqual(status, 405)
+        self.assertEqual(headers["allow"], "GET, HEAD")
+        self.assertIn("Read-only dashboard", page)
+
+        status, _, _ = self.post_form(fields, headers={"Origin": self.base})
+        self.assertEqual(status, 303)
+
+    def test_injected_text_is_escaped(self) -> None:
+        plan_id = self.create_plan(
+            self.plan_fields(
+                name="<script>alert('name')</script>",
+                note="<script>note()</script>",
+                categories=(
+                    ("<script>cat()</script>", "1000", "essential"),
+                    ("<img src=x>", "500", "flexible"),
+                ),
+                spendings=(
+                    ("2026-10-01", "<script>cat()</script>", "100", "<script>entry()</script>"),
+                ),
+            )
+        )
+        status, _, page = self.fetch(f"/plan?plan={plan_id}")
+        self.assertEqual(status, 200)
+        self.assertIn("&lt;script&gt;", page)
+        self.assertIn("&lt;img src=x&gt;", page)
+        self.assertNotIn("<script>", page)
+        self.assertNotIn("<img src=x>", page)
+
+    def test_no_planned_amounts_still_analyzes(self) -> None:
+        plan_id = self.create_plan(
+            self.plan_fields(
+                categories=(("Food", "", "essential"), ("Fun", "", "flexible")),
+                spendings=(
+                    ("2026-10-01", "Food", "800", ""),
+                    ("2026-10-02", "Fun", "500", ""),
+                ),
+            )
+        )
+        status, _, page = self.fetch(f"/plan?plan={plan_id}")
+        self.assertEqual(status, 200)
+        self.assertIn("No planned amounts were entered", page)
+        self.assertIn("actual spending only", page)
+        self.assertIn("KES 1,300.00", page)
+        self.assertIn("No plan", page)
+        self.assertIn("plan-compare", page)
 
 
 if __name__ == "__main__":

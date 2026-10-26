@@ -71,6 +71,13 @@ def table(
     )
 
 
+def _short_label(value: object, limit: int = 26) -> str:
+    text = str(value)
+    if len(text) <= limit:
+        return text
+    return text[: limit - 1] + "…"
+
+
 def bar_chart(
     items: list[dict],
     label_key: str,
@@ -109,16 +116,106 @@ def bar_chart(
         y = gap + index * (bar_height + gap)
         value = float(item[value_key])
         bar = chart_width * value / maximum if value > 0 else 0.0
-        label = html.escape(str(item[label_key]))
+        label = html.escape(_short_label(item[label_key]))
         parts.append(f'<text x="0" y="{y + bar_height - 5}" class="bar-label">{label}</text>')
         parts.append(
             f'<rect x="{label_width}" y="{y}" width="{bar:.1f}" '
-            f'height="{bar_height}" rx="6" fill="url(#{html.escape(gradient_id)})"></rect>'
+            f'height="{bar_height}" rx="6" fill="url(#{html.escape(gradient_id)})">'
+            f"<title>{label}: KES {money(value)}</title></rect>"
         )
         parts.append(
             f'<text x="{label_width + bar + 8:.1f}" y="{y + bar_height - 5}" '
             f'class="bar-value">{money(value)}</text>'
         )
+    parts.append("</svg></div>")
+    parts.append('<p class="chart-hint">Swipe the chart sideways to see every value.</p>')
+    return "".join(parts)
+
+
+def grouped_bar_chart(
+    items: list[dict],
+    label_key: str,
+    series: list[tuple[str, str, str, str]],
+    *,
+    title: str,
+    gradient_prefix: str,
+    width: int = 760,
+    label_width: int = 170,
+    chart_width: int = 450,
+    bar_height: int = 13,
+    bar_gap: int = 3,
+    group_gap: int = 16,
+) -> str:
+    """Draw two or more values per labelled item as grouped horizontal bars.
+
+    ``series`` entries are ``(key, label, start_colour, end_colour)``. Values are
+    scaled against one shared maximum so planned and actual bars are comparable.
+    """
+    if not items or not series:
+        return '<p class="section-note">Nothing to chart.</p>'
+    maximum = (
+        max(
+            float(item.get(key, 0) or 0)
+            for item in items
+            for key, _, _, _ in series
+        )
+        or 1.0
+    )
+    group_height = len(series) * bar_height + (len(series) - 1) * bar_gap
+    height = len(items) * (group_height + group_gap) + group_gap
+    gradient_ids = [f"{gradient_prefix}-{index}" for index in range(len(series))]
+
+    legend = "".join(
+        f'<span><i style="background:linear-gradient(90deg,'
+        f'{html.escape(start, quote=True)},{html.escape(end, quote=True)})"></i>'
+        f"{html.escape(label)}</span>"
+        for _, label, start, end in series
+    )
+    parts = [
+        f'<div class="chart-legend">{legend}</div>',
+        f'<div class="chart-wrap"><svg class="chart" viewBox="0 0 {width} {height}" '
+        'preserveAspectRatio="xMinYMin meet" role="img" '
+        f'aria-label="{html.escape(title)}">',
+        f"<title>{html.escape(title)}</title>",
+        "<defs>",
+    ]
+    for gradient_id, (_, _, start, end) in zip(gradient_ids, series):
+        parts.append(
+            f'<linearGradient id="{html.escape(gradient_id)}" x1="0" y1="0" x2="1" y2="0">'
+            f'<stop offset="0" stop-color="{html.escape(start, quote=True)}"></stop>'
+            f'<stop offset="1" stop-color="{html.escape(end, quote=True)}"></stop>'
+            "</linearGradient>"
+        )
+    parts.append("</defs>")
+    for fraction in (0.5, 1.0):
+        x = label_width + chart_width * fraction
+        parts.append(
+            f'<line class="guide" x1="{x:.1f}" y1="4" x2="{x:.1f}" '
+            f'y2="{height - 4}"></line>'
+        )
+    for index, item in enumerate(items):
+        top = group_gap + index * (group_height + group_gap)
+        label = html.escape(_short_label(item[label_key]))
+        parts.append(
+            f'<text x="0" y="{top + group_height / 2 + 4:.1f}" '
+            f'class="bar-label">{label}</text>'
+        )
+        for series_index, (key, series_label, _, _) in enumerate(series):
+            value = float(item.get(key, 0) or 0)
+            bar = chart_width * value / maximum if value > 0 else 0.0
+            y = top + series_index * (bar_height + bar_gap)
+            parts.append(
+                f'<rect x="{label_width}" y="{y}" width="{bar:.1f}" '
+                f'height="{bar_height}" rx="4" '
+                f'fill="url(#{html.escape(gradient_ids[series_index])})">'
+                f"<title>{label} · {html.escape(series_label)}: "
+                f"KES {money(value)}</title></rect>"
+            )
+            value_x = label_width + bar + 6 if bar else label_width + 4
+            parts.append(
+                f'<text x="{value_x:.1f}" y="{y + bar_height - 3}" '
+                f'class="bar-value small">{money(value)}</text>'
+            )
     parts.append("</svg></div>")
     parts.append('<p class="chart-hint">Swipe the chart sideways to see every value.</p>')
     return "".join(parts)

@@ -23,6 +23,7 @@ useful to whoever maintains this project next — including future me.
 | 13. Interactive dashboard | done | `web.py`, `student-spending serve`, 20 dashboard tests, browser-checked at 1280 px and 390 px |
 | 14. Upload platform | done | `platform.py`, `/upload`, isolated workspaces, 11 upload tests, browser-checked upload and analysis |
 | 15. Single-file upload | done | one transactions CSV, derived students, budget variance skipped, 95 tests |
+| 16. Per-student money plan | done | `personal.py`, `/plan`, user-defined categories, saved results, 32 plan tests (127 total), browser-checked at 1440 px and 390 px |
 
 ## Decisions worth remembering
 
@@ -101,6 +102,30 @@ useful to whoever maintains this project next — including future me.
   correct stacked labels, sticky navigation, reduced-motion behaviour and an empty
   console. Rendering bugs (grammar, clipped headers, dead grid space) only appeared in
   the screenshots, not in the unit tests.
+- **The planner belongs to one student, not the warehouse.** Its input is a worksheet,
+  not a batch fact table. Saving it as JSON under `data/plans/` keeps the pipeline's
+  reconciliation identities and sample dataset untouched, and lets the result page be a
+  cacheable GET view. The trade-off is no SQL analytics over plans and no cross-student
+  history.
+- **User-defined categories need a canonical key.** The student can write `Food`,
+  `food` or `FOOD`; storing the first spelling and matching with `casefold()` keeps the
+  display readable while treating the rows as one category. Duplicates are rejected
+  rather than merged silently, so the student sees the clash.
+- **Plan amounts are optional, and zero is not missing.** A category with no planned
+  amount can still receive spending; it is labelled **No plan**, not treated as a
+  budget of zero or as an error. When every planned amount is blank, the page reports
+  actual spending and shares and says there is no plan to compare.
+- **Saved plans are immutable.** **Edit as a copy** creates a new plan id instead of
+  overwriting the old file. That keeps every result link honest, at the cost of files
+  accumulating; a delete/retention UI is still missing.
+- **The result link is the access token.** Without a login, a random `p-<16 char>` id and
+  no directory listing are the only protections. This is acceptable for made-up numbers
+  on loopback, not for real finances. Ids are validated against a strict pattern before
+  any path is built.
+- **Two rendering charts, one scale.** The ranked chart answers "where did the money
+  go?"; the grouped chart puts each category's plan next to its actual spend on a shared
+  axis. Both are inline SVG with tooltips, and both use the same shortened labels so a
+  long user-defined name does not collide with the value.
 
 ## Bugs hit during development
 
@@ -212,6 +237,25 @@ useful to whoever maintains this project next — including future me.
     *Fix:* parse the URL with `urlsplit` and `parse_qs`, then assert the parameter values.
     *Lesson:* test URL semantics, not the incidental order of encoded parameters.
 
+17. **Plain amounts were rejected as invalid.** The parser required a `KES` prefix, so a
+    browser test that typed `6000` failed validation even though the form copy said
+    `18,000` was fine.
+    *Cause:* the regex used `(?:kes|ksh)\s*` instead of an optional prefix.
+    *Fix:* make the prefix optional and keep the anchored number/commas/decimal pattern.
+    *Lesson:* test the exact examples printed in the UI help text.
+
+18. **The over-plan insight read "1 categories are".** The plural wording was hard-coded
+    and the first real plan had exactly one over-plan category.
+    *Fix:* choose "category is" or "categories are" from the count and assert the
+    sentence in the web test.
+    *Lesson:* counts of zero, one and many all need their own wording.
+
+19. **The 405 page title broke the read-only contract.** A generic "does not accept that
+    request" title replaced "Read-only dashboard" and failed an existing test.
+    *Fix:* keep the established title and put the explanation in the body.
+    *Lesson:* error-page copy is part of the public contract; update tests deliberately,
+    not incidentally.
+
 ## Concepts this project exercises
 
 Extraction boundaries; per-row error isolation; normalisation vs validation; policy for
@@ -223,7 +267,9 @@ escaping; HTTP request/response handling; multipart/form-data parsing and POST/r
 flows; origin and `Sec-Fetch-Site` checks; referrer-policy side effects; ephemeral
 workspaces and path allow-lists; server-side rendering; GET form state; threaded request
 handling; read-only database connections; `LIKE` escaping; content security policy; CSV
-formula injection; and the difference between "valid" and "unusual".
+formula injection; user-defined taxonomies and case-insensitive canonical keys; POST/
+redirect/GET; unguessable resource ids as capability links; JSON persistence with a
+strict reload path; grouped SVG charts; and the difference between "valid" and "unusual".
 
 ## Next exercises (for the learner, not the pipeline)
 
@@ -239,6 +285,12 @@ formula injection; and the difference between "valid" and "unusual".
    returns the same totals as the HTML summary for the same URL.
 7. Add a saved-view feature without putting user text into SQL: store only validated
    filter values and rebuild the query on load.
+8. Let the planner import one student's transactions from the warehouse, map them to the
+   student's own category names, and compare the imported actuals with the plan.
+9. Add a month field to a plan and compare two saved plans for the same student without
+   merging their files.
+10. Add a plan deletion flow with a confirmation step, then write a test proving that a
+    guessed id cannot delete a plan.
 
 ## Open questions
 
@@ -249,3 +301,7 @@ formula injection; and the difference between "valid" and "unusual".
   or warehouse table?
 - If this ever held real data, what authentication and access logging would be required
   before any route left loopback?
+- Should a saved plan expire, or should the server offer an explicit delete action rather
+  than relying on the student to remove files under `data/plans/`?
+- Should the planner support more than one currency, or is KES-only the honest scope for
+  this dataset?

@@ -4,6 +4,52 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-10-26
+
+Adds a per-student money planner. A student enters the money they have, names their own
+categories, records planned and actual amounts, and receives a saved analysis with
+planned-versus-actual charts and category shares. The planner is local, uses no
+JavaScript and never asks for bank, card or payment credentials.
+
+### Added
+
+- `GET /plan` and `POST /plan`: a four-section form for a display name, money available,
+  budgeting method and note, up to 12 user-named categories with optional planned
+  amounts and an essential/flexible flag, and up to 24 spending rows with date,
+  category, amount and note.
+- `personal.py`: typed draft/plan/analysis models, amount parsing (commas, spaces, KES
+  prefix and decimals), field-level validation, integer-cent analysis, and strict JSON
+  storage under `data/plans/`.
+- A bookmarkable result page at `/plan?plan=p-…` with summary cards, unallocated and
+  overspending banners, plain-language insights, a ranked spending chart, a grouped
+  planned-versus-actual chart, a category table with plan status, an essential/flexible
+  split, the spending entries and the chosen method.
+- **Edit as a copy** prefills the form from a saved plan and saves a new plan instead of
+  overwriting the original.
+- `grouped_bar_chart` in `components.py`, shared chart tooltips and shortened chart
+  labels for long user-defined category names.
+- 32 money-plan tests (127 total): amount parsing, validation, analysis arithmetic,
+  JSON round-trips and tamper rejection, the web flow, edit-as-copy, request guards and
+  HTML escaping.
+- Desktop form, desktop result and phone-width screenshots in `docs/images/`.
+
+### Changed
+
+- The dashboard and upload pages link to the planner; the dashboard's primary call to
+  action is now **Plan my money**.
+- Saved plans are stored as unguessable `p-<16 char>` JSON files and are not listed or
+  indexed; the result link is the only way back. `data/plans/` is git-ignored.
+- The server now identifies itself as version 1.4. The footer states that `POST /upload`
+  and `POST /plan` are the only write paths.
+- Release version is now `1.4.0`.
+
+### Fixed
+
+- The amount parser required a `KES` prefix for plain numbers such as `6000` or
+  `18,000`; the prefix is now optional.
+- The over-plan insight now reads "1 category is over plan" instead of
+  "1 categories are over plan".
+
 ## [1.3.0] - 2026-10-26
 
 Simplifies the upload workspace to a single transactions CSV. Profiles and budgets are
