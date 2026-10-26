@@ -10,7 +10,18 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import analytics, config, database, extract, load, logging_setup, quality, report, validate
+from . import (
+    __version__,
+    analytics,
+    config,
+    database,
+    extract,
+    load,
+    logging_setup,
+    quality,
+    report,
+    validate,
+)
 from .errors import PipelineError
 
 logger = logging.getLogger(__name__)
@@ -171,7 +182,13 @@ def _mark_failed(connection: sqlite3.Connection, run_id: str, message: str) -> N
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Run the Student Spending Analytics pipeline end to end."
+        prog="student-spending",
+        description="Run the Student Spending Analytics pipeline end to end.",
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
     )
     parser.add_argument(
         "--transactions",

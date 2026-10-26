@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: ${{ matrix.os }} / Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ["3.12", "3.13"]
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+
+      - name: Install the package
+        run: python -m pip install --upgrade pip && python -m pip install -e .
+
+      - name: Show the installed version
+        run: student-spending --version
+
+      - name: Run the test suite
+        run: python -m unittest discover -s tests -t . -v
+
+      - name: Build the warehouse from scratch
+        run: student-spending --full-refresh
+
+      - name: Rerun to prove the load is idempotent
+        run: student-spending
+
+      - name: Upload the report and audit trail
+        if: matrix.os == 'ubuntu-latest' && matrix.python == '3.13'
+        uses: actions/upload-artifact@v4
+        with:
+          name: spending-report
+          path: |
+            reports/spending_report.html
+            data/quarantine/*.csv
+          if-no-files-found: error

@@ -6,7 +6,20 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+def _locate_project_root() -> Path:
+    """Checkout root when run from source, else the working directory.
+
+    An editable install imports this file from ``src/``, so the checkout is two
+    levels up. A regular wheel install lives in site-packages, where that path
+    is meaningless; such runs resolve paths against the current directory.
+    """
+    source_root = Path(__file__).resolve().parents[2]
+    if (source_root / "sql" / "schema.sql").is_file():
+        return source_root
+    return Path.cwd()
+
+
+PROJECT_ROOT = _locate_project_root()
 
 RAW_DATA_DIR = PROJECT_ROOT / "data" / "raw"
 PROCESSED_DATA_DIR = PROJECT_ROOT / "data" / "processed"

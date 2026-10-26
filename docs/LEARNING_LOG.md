@@ -18,6 +18,7 @@ useful to whoever maintains this project next — including future me.
 | 8. Logging and repeatability | done | console + file logging, run table, idempotent rerun |
 | 9. Visualisation | done | dependency-free HTML report from SQL |
 | 10. Documentation | done | README, data dictionary, quality policy, examples |
+| 11. Packaging and release | done | `pyproject.toml`, console script, wheel build, CI matrix, MIT licence |
 
 ## Decisions worth remembering
 
@@ -40,6 +41,11 @@ useful to whoever maintains this project next — including future me.
   produce overruns, so a few student/month/category lines use a 0.55–0.70 scaling factor
   against actual spend. This is documented in the generator; it is a teaching device,
   not a claim about real students.
+- **Editable install, not a self-contained wheel.** The tool reads `data/`, `sql/` and
+  writes `warehouse/` relative to the project, so the supported installation is
+  `pip install -e .` from the checkout. A wheel install falls back to resolving paths
+  from the current directory, which is verified, but shipping the schema and sample data
+  inside a wheel would be a different product decision.
 
 ## Bugs hit during development
 
@@ -66,6 +72,22 @@ useful to whoever maintains this project next — including future me.
 4. **Report cards wrapped badly at six columns.** The KPI value `KES 556,862.27` broke
    onto two lines in a 150 px grid cell.
    *Fix:* raised the grid minimum to 200 px and prevented value wrapping.
+
+5. **Python 3.13 virtual environments do not ship setuptools.** `pip install -e .`
+   against a setuptools backend failed until the build dependency was resolved; the
+   wheel build then reported `ModuleNotFoundError: No module named 'setuptools'` inside
+   the venv.
+   *Cause:* newer CPython venvs bootstrap pip only, and build isolation normally fetches
+   the backend.
+   *Fix:* declared `setuptools>=77` in `[build-system]` and installed it in the venv for
+   local, no-isolation checks.
+   *Lesson:* "no runtime dependencies" is not "no build dependencies".
+
+6. **`python -m student_spending --version` printed `__main__.py 1.0.0`.** argparse
+   derives the program name from `sys.argv[0]`, which is the module file when run with
+   `-m`.
+   *Fix:* set `prog="student-spending"` explicitly so every entry point presents the same
+   name.
 
 ## Concepts this project exercises
 

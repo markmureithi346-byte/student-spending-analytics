@@ -3,7 +3,11 @@
 # The pipeline deliberately uses the Python standard library only:
 #   csv, sqlite3, decimal, hashlib, json, logging, datetime, argparse, uuid, unittest
 #
-# Install nothing. Create the virtual environment and run the pipeline:
+# setuptools is a build-time dependency only and is declared in pyproject.toml;
+# pip fetches it automatically during installation.
+#
+# Install and run:
 #   py -3.13 -m venv .venv
 #   .\.venv\Scripts\Activate.ps1
-#   python run_pipeline.py --full-refresh
+#   python -m pip install -e .
+#   student-spending --full-refresh

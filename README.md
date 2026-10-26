@@ -53,28 +53,59 @@ accepted  = inserted + updated + unchanged
 Both identities are asserted on every run by the `reconciliation_counts` check and by
 the integration tests.
 
-## Quick start (Windows 11)
+## Install
+
+Python 3.12+ (3.13 tested) with its bundled SQLite (3.35+). There are
+**no third-party runtime dependencies**; pip fetches `setuptools` only to build
+the package.
 
 ```powershell
 cd C:\Users\PC\Documents\Qoder\2026-10-26\ef1e6962\student-spending-analytics
 py -3.13 -m venv .venv
 .\.venv\Scripts\Activate.ps1
+python -m pip install -e .
+```
 
+Git Bash equivalents: `source .venv/Scripts/activate` and the same pip command.
+`python scripts/check_env.py` verifies the interpreter, SQLite version and active
+virtual environment.
+
+## Quick start
+
+```powershell
 python scripts\generate_synthetic_data.py     # writes data/raw/*.csv
-python run_pipeline.py --full-refresh         # deletes the warehouse, then rebuilds it
+student-spending --full-refresh               # deletes the warehouse, then rebuilds it
 python run_tests.py                           # 61 tests
 start reports\spending_report.html
 ```
 
-Git Bash equivalents: `source .venv/Scripts/activate` and
-`.venv/Scripts/python.exe run_pipeline.py --full-refresh`.
-
 Omit `--full-refresh` to rerun against the existing warehouse. Because loading is
 upsert-based and change-detected, a rerun inserts nothing and updates nothing.
 
-Requirements: Python 3.12+ (3.13 tested) with its bundled SQLite (3.35+). There are
-**no third-party dependencies** — see `requirements.txt`. `python scripts/check_env.py`
-verifies the interpreter, SQLite version and virtual environment.
+`student-spending`, `python -m student_spending` and `python run_pipeline.py` are
+equivalent entry points; `student-spending --version` reports the installed version.
+Run the console script from the project directory so the default `data/`, `sql/`
+and `warehouse/` paths resolve.
+
+## Command line
+
+```
+student-spending [--transactions PATH] [--profiles PATH] [--budgets PATH]
+                 [--db PATH] [--full-refresh] [--log-level LEVEL]
+```
+
+| Option | Default | Purpose |
+|---|---|---|
+| `--transactions` | `data/raw/student_expenses.csv` | raw transaction input |
+| `--profiles` | `data/raw/student_profiles.csv` | student dimension input |
+| `--budgets` | `data/raw/student_budgets.csv` | planned-spend input |
+| `--db` | `warehouse/student_spending.db` | SQLite warehouse location |
+| `--full-refresh` | off | delete the warehouse file first (destructive) |
+| `--log-level` | `INFO` | console log level |
+
+Exit codes: `0` success, `1` a data quality check failed, `2` a pipeline error
+(missing or invalid input), `3` an unexpected error. Every code is exercised by
+the integration tests. The full run log is also written to `logs/pipeline.log`.
 
 ## What a run produces (verified output of this repository)
 
@@ -166,6 +197,7 @@ The report is regenerated from SQL on every run; no figure is hard-coded.
 
 ```
 student-spending-analytics/
+├── .github/workflows/        CI: tests + two pipeline runs on 2 OSes × 2 Pythons
 ├── data/
 │   ├── raw/                  committed synthetic inputs (3 CSV files)
 │   ├── quarantine/           generated rejection audit CSVs (git-ignored)
@@ -174,11 +206,14 @@ student-spending-analytics/
 ├── reports/                  generated HTML report (git-ignored)
 ├── scripts/                  generate_synthetic_data.py, check_env.py
 ├── sql/                      schema.sql, example_queries.sql
-├── src/student_spending/     pipeline package
+├── src/student_spending/     pipeline package (entry points: __main__.py, cli.py)
 ├── tests/                    61 unittest cases
 ├── warehouse/                generated SQLite database (git-ignored)
 ├── logs/                     pipeline.log (git-ignored)
-├── run_pipeline.py           CLI wrapper
+├── pyproject.toml            package metadata, console script, build config
+├── CHANGELOG.md              release history
+├── LICENSE                   MIT
+├── run_pipeline.py           CLI wrapper for running from a checkout
 └── run_tests.py              test wrapper
 ```
 
@@ -251,6 +286,8 @@ More, including window functions for week-over-week movement:
 
 ```powershell
 python run_tests.py
+# or, without the wrapper:
+python -m unittest discover -s tests -t . -v
 ```
 
 61 tests covering: extraction failures and malformed rows, every validation rule,
@@ -270,6 +307,21 @@ all quality checks, and an end-to-end pipeline run including rerun behaviour.
 | Quarantine table + CSV | Auditable and reviewable; nothing vanishes silently |
 | Validity vs anomaly separated | A large purchase is legitimate but interesting; conflating the two loses data |
 | HTML report with inline SVG | Dependency-free, self-contained, and reads only from the database |
+| Editable install with a console script | One command to run the pipeline; the `src/` layout also prevents tests from importing the package by accident |
+| CI runs the pipeline twice | Proves idempotency on a clean machine, not just in a local wrapper |
+
+## Continuous integration
+
+`.github/workflows/ci.yml` runs on Ubuntu and Windows with Python 3.12 and 3.13:
+
+1. install the package in editable mode,
+2. run the full test suite,
+3. build the warehouse with `student-spending --full-refresh`,
+4. rerun without a refresh to prove the load is idempotent,
+5. upload the HTML report and audit CSV as a build artefact.
+
+The workflow uses only the committed synthetic data, so it needs no secrets or
+external services.
 
 ## Known limitations
 
@@ -290,10 +342,17 @@ all quality checks, and an end-to-end pipeline run including rerun behaviour.
 - Resolve quarantined rows through a reviewed fixes file with lineage back to the run.
 - dbt-style transformation tests or a data quality framework once the SQL grows.
 - Postgres or DuckDB when data outgrows a single SQLite file.
-- CI (GitHub Actions) running `run_tests.py` and the pipeline on a sample file.
 - Optional Streamlit dashboard on top of the same views.
+- Publish tagged releases once the input contract has stayed stable across a few runs.
 
 ## Project log
 
 Phase-by-phase notes, decisions and the bugs hit during development:
-[docs/LEARNING_LOG.md](docs/LEARNING_LOG.md).
+[docs/LEARNING_LOG.md](docs/LEARNING_LOG.md). Release history:
+[CHANGELOG.md](CHANGELOG.md).
+
+## License
+
+[MIT](LICENSE). The committed dataset in `data/raw/` was generated by this project
+and is covered by the same licence; it does not describe real students, accounts or
+payments.

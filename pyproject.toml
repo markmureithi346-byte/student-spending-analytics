@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "student-spending-analytics"
+dynamic = ["version"]
+description = "Dependency-free ETL and analytics pipeline for synthetic student spending data."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Student Spending Analytics contributors" }]
+keywords = ["data-engineering", "etl", "sqlite", "analytics", "data-quality"]
+classifiers = [
+    "Intended Audience :: Education",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Database",
+    "Topic :: Education",
+]
+
+[project.scripts]
+student-spending = "student_spending.cli:main"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["student_spending*"]
+
+[tool.setuptools.dynamic]
+version = { attr = "student_spending.__version__" }
