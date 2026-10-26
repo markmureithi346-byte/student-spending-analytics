@@ -205,6 +205,9 @@ _DASH_CSS = """
 .row-no { color: #9a8cb5; font-size: 11px; font-weight: 700;
   font-variant-numeric: tabular-nums; text-align: right; }
 .plan-section-note { margin: 8px 0 0; color: var(--muted); font-size: 12px; }
+.plan-add { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center;
+  margin: 10px 0 0; }
+.plan-add .button { border-style: dashed; }
 .error-list { margin: 5px 0 0; padding-left: 18px; }
 .error-list li { margin: 2px 0; }
 .plan-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
@@ -338,6 +341,16 @@ class DashboardData:
 def _first(query: dict[str, list[str]], key: str) -> str:
     values = query.get(key)
     return values[0].strip() if values else ""
+
+
+def _form_row_count(
+    form: dict[str, list[str]], key: str, *, default: int, maximum: int
+) -> int:
+    try:
+        value = int(_first(form, key))
+    except ValueError:
+        return default
+    return min(max(value, default), maximum)
 
 
 def _valid_date(value: str) -> bool:
@@ -1512,11 +1525,17 @@ def render_plan_page(
     draft: PlanDraft | None = None,
     errors: list[str] | None = None,
     source: SavedPlan | None = None,
+    category_rows: int = CATEGORY_ROWS,
+    spending_rows: int = SPENDING_ROWS,
 ) -> str:
     draft = draft or PlanDraft()
     errors = errors or []
-    category_rows = max(CATEGORY_ROWS, len(draft.categories))
-    spending_rows = max(SPENDING_ROWS, len(draft.spendings))
+    category_rows = min(
+        max(CATEGORY_ROWS, len(draft.categories), category_rows), MAX_CATEGORIES
+    )
+    spending_rows = min(
+        max(SPENDING_ROWS, len(draft.spendings), spending_rows), MAX_SPENDINGS
+    )
     categories_html = "".join(
         _category_row(number, draft.category(number))
         for number in range(1, category_rows + 1)
@@ -1538,6 +1557,21 @@ def render_plan_page(
         if source is not None
         else '<a class="button ghost" href="/">Explore the sample dataset</a>'
     )
+    if category_rows < MAX_CATEGORIES:
+        add_category = (
+            '<div class="plan-add">'
+            '<button class="button ghost small" type="submit" name="action" '
+            'value="add_category" formaction="/plan#categories" formnovalidate>'
+            "+ Add another category</button>"
+            f'<span class="section-note">{category_rows} of {MAX_CATEGORIES} '
+            "category rows shown.</span>"
+            "</div>"
+        )
+    else:
+        add_category = (
+            f'<p class="plan-section-note">{MAX_CATEGORIES} category rows is the '
+            "maximum.</p>"
+        )
     body = f"""
 <main class="shell">
   <header class="hero dash-hero" id="top">
@@ -1563,6 +1597,8 @@ def render_plan_page(
   {source_note}
 
   <form class="plan-form" method="post" action="/plan" accept-charset="utf-8">
+    <input type="hidden" name="category_rows" value="{category_rows}">
+    <input type="hidden" name="spending_rows" value="{spending_rows}">
     <section class="panel" id="money" aria-labelledby="money-title">
       <p class="eyebrow"><span class="section-no">01</span> Money</p>
       <h2 id="money-title">What you have and how you plan</h2>
@@ -1609,6 +1645,7 @@ def render_plan_page(
         </div>
         {categories_html}
       </div>
+      {add_category}
       <p class="plan-section-note">Leaving Planned KES blank means zero for that
         category. Spending in a category with a zero plan is still included, and the
         analysis marks it as having no plan.</p>
@@ -2077,7 +2114,7 @@ class DashboardServer(ThreadingHTTPServer):
 
 class DashboardHandler(BaseHTTPRequestHandler):
     server: DashboardServer
-    server_version = "StudentSpendingDashboard/1.4"
+    server_version = "StudentSpendingDashboard/1.4.1"
     sys_version = ""
     timeout = 30
 
@@ -2231,12 +2268,40 @@ class DashboardHandler(BaseHTTPRequestHandler):
             )
             return
 
-        draft = read_draft(form)
+        category_rows = _form_row_count(
+            form, "category_rows", default=CATEGORY_ROWS, maximum=MAX_CATEGORIES
+        )
+        spending_rows = _form_row_count(
+            form, "spending_rows", default=SPENDING_ROWS, maximum=MAX_SPENDINGS
+        )
+        if _first(form, "action") == "add_category":
+            category_rows = min(category_rows + 1, MAX_CATEGORIES)
+            draft = read_draft(
+                form, category_rows=category_rows, spending_rows=spending_rows
+            )
+            self._send(
+                HTTPStatus.OK,
+                render_plan_page(
+                    draft=draft,
+                    category_rows=category_rows,
+                    spending_rows=spending_rows,
+                ),
+            )
+            return
+
+        draft = read_draft(
+            form, category_rows=category_rows, spending_rows=spending_rows
+        )
         plan, errors = validate_draft(draft)
         if plan is None:
             self._send(
                 HTTPStatus.UNPROCESSABLE_ENTITY,
-                render_plan_page(draft=draft, errors=errors),
+                render_plan_page(
+                    draft=draft,
+                    errors=errors,
+                    category_rows=category_rows,
+                    spending_rows=spending_rows,
+                ),
             )
             return
 

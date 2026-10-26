@@ -23,7 +23,7 @@ useful to whoever maintains this project next — including future me.
 | 13. Interactive dashboard | done | `web.py`, `student-spending serve`, 20 dashboard tests, browser-checked at 1280 px and 390 px |
 | 14. Upload platform | done | `platform.py`, `/upload`, isolated workspaces, 11 upload tests, browser-checked upload and analysis |
 | 15. Single-file upload | done | one transactions CSV, derived students, budget variance skipped, 95 tests |
-| 16. Per-student money plan | done | `personal.py`, `/plan`, user-defined categories, saved results, 32 plan tests (127 total), browser-checked at 1440 px and 390 px |
+| 16. Per-student money plan | done | `personal.py`, `/plan`, user-defined categories, add-row control, saved results, 35 plan tests (130 total), browser-checked at 1440 px and 390 px |
 
 ## Decisions worth remembering
 
@@ -126,6 +126,11 @@ useful to whoever maintains this project next — including future me.
   go?"; the grouped chart puts each category's plan next to its actual spend on a shared
   axis. Both are inline SVG with tooltips, and both use the same shortened labels so a
   long user-defined name does not collide with the value.
+- **Add-row is a draft round-trip, not a script.** **+ Add another category** submits the
+  current form to the server with `action=add_category`, and the page is re-rendered with
+  one more row and every draft value intact. It does not validate or save. This keeps the
+  no-JavaScript and strict-CSP constraints, at the cost of a page reload per added row;
+  hidden row counts make the added rows survive validation errors and final submission.
 
 ## Bugs hit during development
 
@@ -256,6 +261,12 @@ useful to whoever maintains this project next — including future me.
     *Lesson:* error-page copy is part of the public contract; update tests deliberately,
     not incidentally.
 
+20. **The maximum row state still invited another row.** At 24 categories the button was
+    correctly replaced by a limit note, but the help text above still said to use it.
+    *Fix:* remove the inline instruction and let the control (or the limit note) carry the
+    message; assert both states in the web test.
+    *Lesson:* every limited control needs copy for the available and exhausted states.
+
 ## Concepts this project exercises
 
 Extraction boundaries; per-row error isolation; normalisation vs validation; policy for
@@ -269,7 +280,8 @@ workspaces and path allow-lists; server-side rendering; GET form state; threaded
 handling; read-only database connections; `LIKE` escaping; content security policy; CSV
 formula injection; user-defined taxonomies and case-insensitive canonical keys; POST/
 redirect/GET; unguessable resource ids as capability links; JSON persistence with a
-strict reload path; grouped SVG charts; and the difference between "valid" and "unusual".
+strict reload path; grouped SVG charts; no-JavaScript draft round-trips for dynamic form
+rows; and the difference between "valid" and "unusual".
 
 ## Next exercises (for the learner, not the pipeline)
 

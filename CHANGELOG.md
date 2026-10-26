@@ -4,6 +4,30 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.1] - 2026-10-26
+
+Adds an **+ Add another category** control to the money-plan form. It works without
+JavaScript, keeps every value already typed, and does not save a plan until **Run my
+analysis** is selected.
+
+### Added
+
+- A server-backed add-row button beneath the category rows. Submitting it re-renders the
+  form with one more row, preserving names, amounts, spending entries and the synthetic
+  confirmation.
+- Hidden row-count fields so added rows survive validation errors and normal submission.
+- The category limit rises from 12 to 24 rows; the form still starts with 12 and shows
+  how many of the 24 rows are visible. At the limit the button is replaced by a note.
+
+### Changed
+
+- Release version is now `1.4.1`; three new web tests bring the suite to 130.
+
+### Fixed
+
+- The category help text no longer promises an add control when the maximum row count
+  has already been reached.
+
 ## [1.4.0] - 2026-10-26
 
 Adds a per-student money planner. A student enters the money they have, names their own

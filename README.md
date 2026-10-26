@@ -99,7 +99,7 @@ virtual environment.
 ```powershell
 python scripts\generate_synthetic_data.py     # writes data/raw/*.csv
 student-spending --full-refresh               # deletes the warehouse, then rebuilds it
-python run_tests.py                           # 127 tests
+python run_tests.py                           # 130 tests
 start reports\spending_report.html
 student-spending serve --open                 # local server; blocks until Ctrl+C
 ```
@@ -243,14 +243,16 @@ form is an ordinary HTML form with no JavaScript:
 2. **Categories** — name your own categories, in your own words. Each row takes an
    optional planned amount and an **Essential** or **Flexible** flag. There is no fixed
    category list. Blank rows are ignored, and at least two named categories are required.
+   **+ Add another category** extends the form from 12 rows up to 24; it preserves every
+   value you have typed and does not save a plan.
 3. **Spending** — one row per purchase or payment: date, one of your category names,
    amount and an optional note. Category matching ignores capitalisation, and entries in
    a category with no planned amount are still included and marked **No plan**.
 4. **Review** — confirm the numbers are made up, then select **Run my analysis**.
 
 Amounts accept `2,500`, `2500`, `12 500` and `KES 2500.50`, and are stored as integer
-cents. The form provides 12 category rows and 24 spending rows, and a plan cannot hold
-more than those limits.
+cents. The form starts with 12 category rows and 24 spending rows; the add button
+extends categories to 24. A plan cannot hold more than those limits.
 
 The result page is saved under an unguessable `/plan?plan=p-…` link and shows:
 
@@ -430,7 +432,7 @@ student-spending-analytics/
 ├── scripts/                  generate_synthetic_data.py, check_env.py
 ├── sql/                      schema.sql, example_queries.sql
 ├── src/student_spending/     pipeline, report, platform, dashboard and plan modules
-├── tests/                    127 unittest cases
+├── tests/                    130 unittest cases
 ├── warehouse/                generated SQLite database; uploads/ per analysis (git-ignored)
 ├── logs/                     pipeline.log (git-ignored)
 ├── pyproject.toml            package metadata, console script, build config
@@ -513,7 +515,7 @@ python run_tests.py
 python -m unittest discover -s tests -t . -v
 ```
 
-127 tests covering: extraction failures and malformed rows, derived and explicit student
+130 tests covering: extraction failures and malformed rows, derived and explicit student
 dimensions, every validation rule, normalisation, duplicate handling, reconciliation
 accounting, idempotent loading, foreign keys and CHECK constraints, analytics totals and
 shares, anomaly flagging, all quality checks, end-to-end pipeline runs including rerun
@@ -527,10 +529,10 @@ and negative values), draft validation (names, duplicates, unknown spending cate
 dates, bounds, at least two categories and one spending row, synthetic confirmation),
 integer-cent analysis (planned/spent/left/unallocated, category statuses, essential and
 flexible shares, daily average), JSON storage and reload, rejection of malformed or
-tampered plan files, and the web flow: form rendering, submission and bookmarkable
-result, edit-as-copy, validation errors that preserve input and save nothing, cross-site
-and wrong-content-type guards, injected-text escaping, and analysis with zero planned
-amounts.
+tampered plan files, and the web flow: form rendering, adding category rows while
+preserving input without saving, the 24-row limit, submission and bookmarkable result,
+edit-as-copy, validation errors that preserve input and save nothing, cross-site and
+wrong-content-type guards, injected-text escaping, and analysis with zero planned amounts.
 
 The upload platform adds tests for single-CSV multipart validation (missing, duplicate
 and unknown fields; wrong extensions; missing headers; header-only and binary files;
@@ -609,10 +611,10 @@ external services.
 - The money planner is a single-student worksheet with no history, month switching or
   comparison between periods. It does not import the sample warehouse or an uploaded
   CSV, and it has no recurring-entry or currency-conversion support; all amounts are KES.
-- The planner form shows 12 category rows and 24 spending rows, and every submission
-  creates a new saved plan, including **Edit as a copy**. There is no in-place update,
-  delete button, retention policy or list of saved plans; remove files under
-  `data/plans/` by hand.
+- The planner form starts with 12 category rows (up to 24 with **+ Add another
+  category**) and 24 spending rows. Every submission creates a new saved plan, including
+  **Edit as a copy**. There is no in-place update, delete button, retention policy or
+  list of saved plans; remove files under `data/plans/` by hand.
 - Saved plans are unencrypted JSON containing the display name, amounts, categories and
   notes. There is no login: anyone who can reach the server or read the disk and knows a
   plan id can read that plan. That is acceptable only for made-up numbers on loopback.
