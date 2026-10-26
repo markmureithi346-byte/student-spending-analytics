@@ -1,0 +1,9 @@
+# No third-party runtime dependencies.
+#
+# The pipeline deliberately uses the Python standard library only:
+#   csv, sqlite3, decimal, hashlib, json, logging, datetime, argparse, uuid, unittest
+#
+# Install nothing. Create the virtual environment and run the pipeline:
+#   py -3.13 -m venv .venv
+#   .\.venv\Scripts\Activate.ps1
+#   python run_pipeline.py --full-refresh
