@@ -40,6 +40,15 @@ validated warehouse, analytics, quality evidence and an HTML report.
   and Windows with Python 3.12 and 3.13.
 - MIT license and this changelog.
 
+### Changed
+
+- Redesigned the HTML report around a purple animated backdrop with sticky section
+  navigation, an at-a-glance summary, KPI cards, gradient charts and share bars.
+- Tables now stack into labelled cards on narrow screens instead of hiding columns
+  behind horizontal scrolling; charts carry a swipe hint at the same widths.
+- Added reduced-motion support, a skip link, chart descriptions, print styles and
+  higher-contrast over-budget emphasis.
+
 ### Fixed
 
 - Rerun classification could read an earlier pipeline run when two runs shared

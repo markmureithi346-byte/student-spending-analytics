@@ -191,7 +191,11 @@ Every rejected or quarantined row is written to
 
 ![Category chart](docs/images/report-category-chart.png)
 
-The report is regenerated from SQL on every run; no figure is hard-coded.
+The report is regenerated from SQL on every run; no figure is hard-coded. It is a
+single self-contained file: an animated purple backdrop, sticky section navigation,
+KPI cards, gradient SVG charts and share bars. On narrow screens tables become
+labelled cards instead of hiding columns behind a scrollbar. Animations are disabled
+under `prefers-reduced-motion`, and the page includes print styles.
 
 ## Project layout
 

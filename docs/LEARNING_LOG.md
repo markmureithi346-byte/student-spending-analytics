@@ -19,6 +19,7 @@ useful to whoever maintains this project next — including future me.
 | 9. Visualisation | done | dependency-free HTML report from SQL |
 | 10. Documentation | done | README, data dictionary, quality policy, examples |
 | 11. Packaging and release | done | `pyproject.toml`, console script, wheel build, CI matrix, MIT licence |
+| 12. Report experience | done | animated purple theme, sticky nav, responsive stacked tables, refreshed screenshots |
 
 ## Decisions worth remembering
 
@@ -46,6 +47,11 @@ useful to whoever maintains this project next — including future me.
   `pip install -e .` from the checkout. A wheel install falls back to resolving paths
   from the current directory, which is verified, but shipping the schema and sample data
   inside a wheel would be a different product decision.
+- **The report is a product surface, not a dump.** Every figure still comes from SQL,
+  but the page now has a sticky section index, a one-sentence summary, KPI cards and
+  charts. Below 640 px each table row becomes a labelled card: horizontal scrolling hid
+  columns entirely on a phone. Animation is CSS-only and switches off for
+  `prefers-reduced-motion`; the print stylesheet drops the backdrop and chrome.
 
 ## Bugs hit during development
 
@@ -88,6 +94,21 @@ useful to whoever maintains this project next — including future me.
    `-m`.
    *Fix:* set `prog="student-spending"` explicitly so every entry point presents the same
    name.
+
+7. **The report's `.num` helper class tinted every number magenta.** The same class styled
+   the section eyebrow and right-aligned table cells, so the new `.panel .num` colour
+   applied to counts and totals as well.
+   *Cause:* a generic utility class reused for two unrelated elements.
+   *Fix:* renamed the eyebrow class to `.section-no`.
+   *Lesson:* utility class names are global; scope them to a component.
+
+8. **Responsive tables originally scrolled sideways.** At 390 px the quality table
+   showed only CHECK and RESULT; OBSERVED and EXPECTED were off-screen and rows became
+   very tall.
+   *Fix:* below 640 px, hide the header row and render each row as labelled cards using
+   `data-label` attributes, with the identifier rows laid out on their own line.
+   *Lesson:* a mobile layout has to be tested at a real phone width; a min-width plus
+   overflow rule is not a responsive design.
 
 ## Concepts this project exercises
 
