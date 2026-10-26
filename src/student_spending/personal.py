@@ -1,24 +1,21 @@
 """Collect one student's money plan and compare it with their own spending.
 
-The form is turned into integer cents before anything is stored or calculated.
-Categories are free text chosen by the student, spending entries must reference
-one of those categories, and every amount is bounded. Nothing connects to a
-bank, card or payment account: the analysis only compares numbers the student
-typed, and saved plans stay as JSON under ``data/plans/`` on this machine.
+The form is turned into integer cents before anything is calculated. Categories
+are free text chosen by the student, spending entries must reference one of
+those categories, and every amount is bounded. Nothing connects to a bank, card
+or payment account: the analysis only compares numbers the student typed, and
+the result is rendered in the response rather than written to disk.
 
-Money is stored in cents to match the pipeline's integers and to avoid binary
+Money is parsed into cents to match the pipeline's integers and to avoid binary
 floating-point drift in the comparison figures.
 """
 
 from __future__ import annotations
 
-import json
 import re
-import secrets
 import urllib.parse
 from dataclasses import dataclass
 from datetime import date
-from pathlib import Path
 
 from . import config
 
@@ -35,9 +32,7 @@ MAX_SPENDING_CENTS = config.MAX_TRANSACTION_AMOUNT_CENTS
 MAX_PLAN_REQUEST_BYTES = 256 * 1024
 # Covers the largest allowed form: 100 category rows and 100 spending rows.
 MAX_FORM_FIELDS = 800
-MAX_SAVED_PLAN_BYTES = 256 * 1024
 
-PLAN_ID_PATTERN = re.compile(r"^p-[A-Za-z0-9_-]{16}$")
 _ROW_KEY_PATTERN = re.compile(r"^(?:category|spending)_[a-z]+_(\d+)$")
 _AMOUNT_PATTERN = re.compile(
     r"^(?:kes|ksh)?\s*(?P<whole>\d{1,3}(?:,\d{3})*|\d+)(?:\.(?P<fraction>\d{1,2}))?$",
@@ -133,12 +128,6 @@ class MoneyPlan:
     categories: tuple[CategoryPlan, ...]
     spendings: tuple[SpendingEntry, ...]
 
-
-@dataclass(frozen=True)
-class SavedPlan:
-    plan_id: str
-    created_at: str
-    plan: MoneyPlan
 
 
 @dataclass(frozen=True)
@@ -502,217 +491,6 @@ def analyse(plan: MoneyPlan) -> PlanAnalysis:
         over_plan=over_plan,
         unplanned=unplanned,
     )
-
-
-def new_plan_id() -> str:
-    return "p-" + secrets.token_urlsafe(12)
-
-
-def is_valid_plan_id(value: str) -> bool:
-    return bool(PLAN_ID_PATTERN.fullmatch(value))
-
-
-def save_plan(plan: MoneyPlan) -> SavedPlan:
-    """Write one plan atomically and return the unguessable id for its page."""
-    plan_id = new_plan_id()
-    created_at = config.utc_now()
-    payload = {
-        "version": 1,
-        "plan_id": plan_id,
-        "created_at": created_at,
-        "student_name": plan.student_name,
-        "money_available_cents": plan.money_available_cents,
-        "method": plan.method,
-        "method_note": plan.method_note,
-        "categories": [
-            {
-                "name": category.name,
-                "planned_cents": category.planned_cents,
-                "essential": category.essential,
-            }
-            for category in plan.categories
-        ],
-        "spendings": [
-            {
-                "date": entry.spent_on.isoformat(),
-                "category": entry.category,
-                "amount_cents": entry.amount_cents,
-                "note": entry.note,
-            }
-            for entry in plan.spendings
-        ],
-    }
-    root = Path(config.PLAN_DATA_DIR)
-    root.mkdir(parents=True, exist_ok=True)
-    temporary = root / f".{plan_id}.tmp"
-    try:
-        temporary.write_text(
-            json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-        )
-        temporary.replace(root / f"{plan_id}.json")
-    finally:
-        temporary.unlink(missing_ok=True)
-    return SavedPlan(plan_id=plan_id, created_at=created_at, plan=plan)
-
-
-def load_plan(plan_id: str) -> SavedPlan | None:
-    """Read a plan only when its id and every stored value are valid."""
-    if not is_valid_plan_id(plan_id):
-        return None
-    path = Path(config.PLAN_DATA_DIR) / f"{plan_id}.json"
-    try:
-        if not path.is_file() or path.stat().st_size > MAX_SAVED_PLAN_BYTES:
-            return None
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
-    return _plan_from_payload(plan_id, payload)
-
-
-def plan_to_draft(plan: MoneyPlan) -> PlanDraft:
-    return PlanDraft(
-        student_name=plan.student_name,
-        money_available=_amount_text(plan.money_available_cents),
-        method=plan.method,
-        method_note=plan.method_note,
-        categories=tuple(
-            CategoryDraft(
-                name=category.name,
-                planned=_amount_text(category.planned_cents),
-                essential=category.essential,
-            )
-            for category in plan.categories
-        ),
-        spendings=tuple(
-            SpendingDraft(
-                spent_on=entry.spent_on.isoformat(),
-                category=entry.category,
-                amount=_amount_text(entry.amount_cents),
-                note=entry.note,
-            )
-            for entry in plan.spendings
-        ),
-        synthetic=True,
-    )
-
-
-def _plan_from_payload(plan_id: str, payload: object) -> SavedPlan | None:
-    if not isinstance(payload, dict) or payload.get("version") != 1:
-        return None
-    if payload.get("plan_id") != plan_id:
-        return None
-
-    created_at = payload.get("created_at")
-    if not isinstance(created_at, str) or not created_at or len(created_at) > 40:
-        return None
-
-    student_name = payload.get("student_name")
-    if not isinstance(student_name, str):
-        return None
-    student_name = _clean_spaces(student_name)
-    if (
-        not student_name
-        or len(student_name) > MAX_NAME_LENGTH
-        or not _printable(student_name)
-    ):
-        return None
-
-    money_available = _stored_int(
-        payload.get("money_available_cents"), 1, MAX_PLANNED_CENTS
-    )
-    method = payload.get("method")
-    if money_available is None or method not in BUDGET_METHODS:
-        return None
-
-    method_note = payload.get("method_note")
-    if not isinstance(method_note, str):
-        return None
-    method_note = _clean_spaces(method_note)
-    if len(method_note) > MAX_METHOD_NOTE_LENGTH or not _printable(method_note):
-        return None
-
-    raw_categories = payload.get("categories")
-    if not isinstance(raw_categories, list) or not 2 <= len(raw_categories) <= MAX_CATEGORIES:
-        return None
-    categories: list[CategoryPlan] = []
-    seen: set[str] = set()
-    for raw in raw_categories:
-        if not isinstance(raw, dict):
-            return None
-        name = raw.get("name")
-        planned = _stored_int(raw.get("planned_cents"), 0, MAX_PLANNED_CENTS)
-        essential = raw.get("essential")
-        if not isinstance(name, str) or planned is None or not isinstance(essential, bool):
-            return None
-        name = _clean_spaces(name)
-        if (
-            not name
-            or len(name) > MAX_CATEGORY_NAME_LENGTH
-            or not _printable(name)
-            or name.casefold() in seen
-        ):
-            return None
-        seen.add(name.casefold())
-        categories.append(CategoryPlan(name, planned, essential))
-
-    raw_spendings = payload.get("spendings")
-    if not isinstance(raw_spendings, list) or not 1 <= len(raw_spendings) <= MAX_SPENDINGS:
-        return None
-    spendings: list[SpendingEntry] = []
-    for raw in raw_spendings:
-        if not isinstance(raw, dict):
-            return None
-        spent_on = raw.get("date")
-        category = raw.get("category")
-        amount = _stored_int(raw.get("amount_cents"), 1, MAX_SPENDING_CENTS)
-        note = raw.get("note", "")
-        if (
-            not isinstance(spent_on, str)
-            or not isinstance(category, str)
-            or amount is None
-            or not isinstance(note, str)
-        ):
-            return None
-        try:
-            parsed_date = date.fromisoformat(spent_on)
-        except ValueError:
-            return None
-        canonical = {item.name.casefold(): item.name for item in categories}.get(
-            category.casefold()
-        )
-        note = _clean_spaces(note)
-        if (
-            canonical is None
-            or len(note) > MAX_ENTRY_NOTE_LENGTH
-            or not _printable(note)
-        ):
-            return None
-        spendings.append(SpendingEntry(parsed_date, canonical, amount, note))
-
-    return SavedPlan(
-        plan_id=plan_id,
-        created_at=created_at,
-        plan=MoneyPlan(
-            student_name=student_name,
-            money_available_cents=money_available,
-            method=str(method),
-            method_note=method_note,
-            categories=tuple(categories),
-            spendings=tuple(spendings),
-        ),
-    )
-
-
-def _amount_text(cents: int) -> str:
-    return f"{cents // 100}.{cents % 100:02d}"
-
-
-def _stored_int(value: object, minimum: int, maximum: int) -> int | None:
-    if isinstance(value, bool) or not isinstance(value, int):
-        return None
-    if not minimum <= value <= maximum:
-        return None
-    return value
 
 
 def _read_amount(

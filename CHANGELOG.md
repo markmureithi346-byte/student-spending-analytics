@@ -4,6 +4,24 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2026-10-26
+
+Renders the money-plan analysis, totals and graphs directly below the form, so there is no
+saved plan, no result link and no separate file to open.
+
+### Changed
+
+- **Run my analysis** now returns the planner page itself (HTTP 200) with the totals,
+  category comparison, spending chart and method summary inserted beneath the form at
+  `#analysis`. All charts are inline SVG generated on this machine.
+- The submitted values stay in the form, so a student can adjust them and run the analysis
+  again without re-entering anything. There is no redirect and no `Location` header.
+- Removed saved-plan storage (`data/plans/`, plan IDs, `/plan?plan=…`, `/plan?edit=…`) and
+  the separate result page. Old plan links now render a fresh, empty form.
+- The analysis copy states plainly that it is generated in the page and is not saved as a
+  separate link or file.
+- Release version is now `2.0.0`; the suite is 128 tests.
+
 ## [1.4.4] - 2026-10-26
 
 Starts both lists in the money plan with a single row, so the form stays short and grows

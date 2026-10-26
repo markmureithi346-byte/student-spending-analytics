@@ -35,15 +35,13 @@ from .personal import (
     MAX_PLAN_REQUEST_BYTES,
     MAX_SPENDINGS,
     SPENDING_ROWS,
+    MoneyPlan,
+    PlanAnalysis,
     PlanDraft,
     PlanRequestError,
-    SavedPlan,
     analyse,
-    load_plan,
     parse_form,
-    plan_to_draft,
     read_draft,
-    save_plan,
     validate_draft,
 )
 from .platform import (
@@ -1552,7 +1550,8 @@ def render_plan_page(
     *,
     draft: PlanDraft | None = None,
     errors: list[str] | None = None,
-    source: SavedPlan | None = None,
+    plan: MoneyPlan | None = None,
+    analysis: PlanAnalysis | None = None,
     category_rows: int = CATEGORY_ROWS,
     spending_rows: int = SPENDING_ROWS,
 ) -> str:
@@ -1572,18 +1571,16 @@ def render_plan_page(
         _spending_row(number, draft.spending(number))
         for number in range(1, spending_rows + 1)
     )
-    source_note = ""
-    if source is not None:
-        source_note = (
-            '<div class="banner note" role="status"><strong>Editing a copy.</strong> '
-            f"This form is filled from plan <code>{escape_attr(source.plan_id)}</code>. "
-            "Submitting saves a new link; the original plan stays unchanged.</div>"
-        )
-    back_link = (
-        f'<a class="button ghost" href="/plan?plan={escape_attr(source.plan_id)}">'
-        "Back to the saved result</a>"
-        if source is not None
-        else '<a class="button ghost" href="/">Explore the sample dataset</a>'
+    analysis_html = (
+        _plan_analysis_sections(plan, analysis)
+        if plan is not None and analysis is not None
+        else ""
+    )
+    analysis_link = '<a href="#analysis">Analysis</a>' if analysis_html else ""
+    analysis_action = (
+        '<a class="button ghost" href="#analysis">See the analysis</a>'
+        if analysis_html
+        else ""
     )
     add_category = _add_row_control(
         section="categories",
@@ -1611,21 +1608,20 @@ def render_plan_page(
       where the money went.</p>
     <div class="hero-actions">
       <a class="button primary" href="#money">Start with the money</a>
-      {back_link}
+      {analysis_action}
+      <a class="button ghost" href="/">Explore the sample dataset</a>
     </div>
     <p class="disclaimer"><strong>Made-up numbers only.</strong> This is a learning tool.
       Do not enter account numbers, card details or payment credentials. Nothing is sent
-      to a bank or a remote service; saved plans stay on this machine.</p>
+      to a bank or a remote service; your numbers stay on this machine.</p>
   </header>
 
   <nav class="toc" aria-label="Money plan sections">
     <a href="#money">Money</a><a href="#categories">Categories</a>
-    <a href="#spending">Spending</a><a href="#review">Review</a>
+    <a href="#spending">Spending</a><a href="#review">Review</a>{analysis_link}
   </nav>
 
-  {source_note}
-
-  <form class="plan-form" method="post" action="/plan" accept-charset="utf-8">
+  <form class="plan-form" method="post" action="/plan#analysis" accept-charset="utf-8">
     <input type="hidden" name="category_rows" value="{category_rows}">
     <input type="hidden" name="spending_rows" value="{spending_rows}">
     <section class="panel" id="money" aria-labelledby="money-title">
@@ -1717,17 +1713,19 @@ def render_plan_page(
       <div class="plan-actions">
         <button class="button primary" type="submit">Run my analysis</button>
         <a class="button ghost" href="/plan">Clear the form</a>
-        <span class="section-note">Saving creates a private result link on this machine.</span>
+        <span class="section-note">The analysis appears below this form.</span>
       </div>
-      <p class="plan-section-note">Plans are stored as JSON under
-        <code>data/plans/</code>. They are not listed, mailed or sent anywhere, and
-        no login is involved. Keep the result link if you want to return.</p>
+      <p class="plan-section-note">The graphs and totals are generated in this page on
+        this machine. Nothing is saved as a separate link or file, and no login is
+        involved.</p>
     </section>
   </form>
 
+  {analysis_html}
+
   <footer class="panel footer">
     <p><strong>Local by design.</strong> The form is validated on the server, amounts
-      are stored as integer cents, and the result page only reads the saved plan. There
+      are stored as integer cents, and the analysis is rendered into this page. There
       is no bank connection and no credential field anywhere.</p>
     <p class="meta-line">Student Spending Analytics &middot; money plan &middot;
       made-up numbers only</p>
@@ -1966,9 +1964,10 @@ def _plan_category_panel(plan: object, analysis: object) -> str:
          share_cell(100.0 - analysis.essential_share_pct)],
     ]
     return f"""
-  <section class="panel" id="categories" aria-labelledby="categories-title">
-    <p class="eyebrow"><span class="section-no">02</span> Categories</p>
-    <h2 id="categories-title">Where the money went</h2>
+  <section class="panel" id="analysis-categories"
+    aria-labelledby="analysis-categories-title">
+    <p class="eyebrow"><span class="section-no">06</span> Categories</p>
+    <h2 id="analysis-categories-title">Where the money went</h2>
     <p class="lead">The first graph ranks your own categories by actual spending. The
       second puts each category's plan next to its actual spend on the same scale.</p>
     <h3>Spending by category</h3>
@@ -1991,7 +1990,7 @@ def _plan_category_panel(plan: object, analysis: object) -> str:
         <p class="section-note">Planned minus spent is positive when a category still
           has money and negative when it is over. "No plan" means spending was recorded
           against a category with a zero planned amount. "Not used" is a planned category
-          with no entries. Every figure comes from the values in this saved plan.</p>
+          with no entries. Every figure comes from the values in this form.</p>
       </div>
     </div>
   </section>"""
@@ -2013,9 +2012,10 @@ def _plan_spending_panel(plan: object, analysis: object) -> str:
         for entry in entries
     ]
     return f"""
-  <section class="panel" id="spending" aria-labelledby="spending-title">
-    <p class="eyebrow"><span class="section-no">03</span> Entries</p>
-    <h2 id="spending-title">The spending behind the totals</h2>
+  <section class="panel" id="analysis-spending"
+    aria-labelledby="analysis-spending-title">
+    <p class="eyebrow"><span class="section-no">07</span> Entries</p>
+    <h2 id="analysis-spending-title">The spending behind the totals</h2>
     <p class="lead">Newest first. These rows are the source of every category total and
       graph above.</p>
     <div class="table-meta">
@@ -2029,104 +2029,48 @@ def _plan_spending_panel(plan: object, analysis: object) -> str:
   </section>"""
 
 
-def _plan_method_panel(saved: SavedPlan) -> str:
-    method_label = BUDGET_METHODS[saved.plan.method]
+def _plan_method_panel(plan: MoneyPlan) -> str:
+    method_label = BUDGET_METHODS[plan.method]
     note = (
-        f'<p class="method-note">{escape_attr(saved.plan.method_note)}</p>'
-        if saved.plan.method_note
+        f'<p class="method-note">{escape_attr(plan.method_note)}</p>'
+        if plan.method_note
         else '<p class="section-note">No budgeting note was added.</p>'
     )
     return f"""
-  <section class="panel" id="method" aria-labelledby="method-title">
-    <p class="eyebrow"><span class="section-no">04</span> Method</p>
-    <h2 id="method-title">How you planned</h2>
+  <section class="panel" id="analysis-method" aria-labelledby="analysis-method-title">
+    <p class="eyebrow"><span class="section-no">08</span> Method</p>
+    <h2 id="analysis-method-title">How you planned</h2>
     <p class="plan-meta">
       <span>Method: <strong>{escape_attr(method_label)}</strong></span>
-      <span>Saved: <strong>{escape_attr(_format_created(saved.created_at))}</strong></span>
-      <span>Plan id: <code>{escape_attr(saved.plan_id)}</code></span>
     </p>
     {note}
     <p class="lead">The analysis does not score your budgeting method or recommend
       financial products. It only compares the categories and amounts you entered with
       the spending entries you recorded.</p>
-    <div class="plan-actions">
-      <a class="button primary" href="/plan?edit={escape_attr(saved.plan_id)}">Edit as a copy</a>
-      <a class="button ghost" href="/plan">Start a new plan</a>
-    </div>
-    <p class="plan-section-note">Stored as <code>data/plans/{escape_attr(saved.plan_id)}.json</code>
-      on this machine. Plans are not listed anywhere, so this result link is the only
-      way back to it.</p>
   </section>"""
 
 
-def render_plan_result(saved: SavedPlan) -> str:
-    plan = saved.plan
-    analysis = analyse(plan)
-    method_label = BUDGET_METHODS[plan.method]
+def _plan_analysis_sections(plan: MoneyPlan, analysis: PlanAnalysis) -> str:
     summary = _plan_summary(plan, analysis)
-    body = f"""
-<main class="shell">
-  <header class="hero dash-hero" id="top">
-    <p class="eyebrow">Saved money plan &middot; local only</p>
-    <h1>Money map for <span>{escape_attr(plan.student_name)}</span></h1>
-    <p class="lede">{escape_attr(summary)}</p>
-    <div class="hero-actions">
-      <a class="button primary" href="#summary">See the analysis</a>
-      <a class="button ghost" href="/plan?edit={escape_attr(saved.plan_id)}">Edit as a copy</a>
-      <a class="button ghost" href="/plan">Start a new plan</a>
-    </div>
-    <ul class="chips">
-      <li><span class="chip-key">Method</span>{escape_attr(method_label)}</li>
-      <li><span class="chip-key">Categories</span>{integer(len(plan.categories))}</li>
-      <li><span class="chip-key">Entries</span>{integer(len(plan.spendings))}</li>
-      <li><span class="chip-key">Saved</span>{escape_attr(_format_created(saved.created_at))}</li>
-      <li><span class="chip-key">Plan link</span><code>{escape_attr(saved.plan_id)}</code></li>
-    </ul>
-    <p class="disclaimer"><strong>Made-up numbers only.</strong> This page compares
-      values typed into the form. It never connects to a bank, card or payment account
-      and stores nothing outside this machine.</p>
-  </header>
-
-  <nav class="toc" aria-label="Money plan result sections">
-    <a href="#summary">Summary</a><a href="#categories">Categories</a>
-    <a href="#spending">Entries</a><a href="#method">Method</a>
-  </nav>
-
-  <section class="panel" id="summary" aria-labelledby="summary-title">
-    <p class="eyebrow"><span class="section-no">01</span> Analysis</p>
-    <h2 id="summary-title">What the numbers say</h2>
+    return f"""
+  <section class="panel" id="analysis" aria-labelledby="analysis-title">
+    <p class="eyebrow"><span class="section-no">05</span> Analysis</p>
+    <h2 id="analysis-title">What the numbers say</h2>
     <p class="lead">{escape_attr(summary)}</p>
     {_plan_cards(plan, analysis)}
     {_plan_banners(plan, analysis)}
     <h3>What stands out</h3>
     {_plan_insights(plan, analysis)}
+    <p class="plan-section-note">This analysis was generated in this page from the
+      values above. It is not saved as a separate link or file.</p>
+    <div class="plan-actions">
+      <a class="button ghost" href="#money">Change the numbers</a>
+    </div>
   </section>
-
   {_plan_category_panel(plan, analysis)}
   {_plan_spending_panel(plan, analysis)}
-  {_plan_method_panel(saved)}
-
-  <footer class="panel footer">
-    <p><strong>Local and private by default.</strong> This plan is a JSON file on this
-      machine. There is no account, no bank connection and no place to enter a card or
-      payment credential.</p>
-    <p class="section-note">The link for this plan is
-      <code>/plan?plan={escape_attr(saved.plan_id)}</code>. Plans are not listed, so keep
-      the link if you want to return. Delete <code>data/plans/</code> to clear saved
-      plans.</p>
-    <p class="meta-line">Student Spending Analytics &middot; money plan &middot;
-      saved {escape_attr(_format_created(saved.created_at))}</p>
-    <div class="footer-links">
-      <a class="totop" href="/plan?edit={escape_attr(saved.plan_id)}">Edit as a copy</a>
-      <a class="totop" href="/">Explore the sample dashboard</a>
-      <a class="totop" href="#top">Back to top</a>
-    </div>
-  </footer>
-</main>
+  {_plan_method_panel(plan)}
 """
-    return _document(
-        f"{plan.student_name} · Money plan · Student Spending Analytics", body
-    )
 
 
 def connect_readonly(db_path: Path) -> sqlite3.Connection:
@@ -2150,7 +2094,7 @@ class DashboardServer(ThreadingHTTPServer):
 
 class DashboardHandler(BaseHTTPRequestHandler):
     server: DashboardServer
-    server_version = "StudentSpendingDashboard/1.4.4"
+    server_version = "StudentSpendingDashboard/2.0.0"
     sys_version = ""
     timeout = 30
 
@@ -2235,44 +2179,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self._send(HTTPStatus.OK, body, head_only=head_only)
 
     def _plan_page(self, query: dict[str, list[str]], *, head_only: bool) -> None:
-        plan_id = _first(query, "plan")
-        edit_id = _first(query, "edit")
-        if plan_id:
-            saved = load_plan(plan_id)
-            if saved is None:
-                self._send(
-                    HTTPStatus.NOT_FOUND,
-                    _error_document(
-                        "Plan not found",
-                        "That saved plan is not available. It may have been removed, "
-                        "or the link may be incomplete.",
-                        action_href="/plan",
-                        action_label="Start a new plan",
-                        eyebrow="Money plan",
-                    ),
-                    head_only=head_only,
-                )
-                return
-            body = render_plan_result(saved)
-        elif edit_id:
-            saved = load_plan(edit_id)
-            if saved is None:
-                self._send(
-                    HTTPStatus.NOT_FOUND,
-                    _error_document(
-                        "Plan not found",
-                        "That saved plan cannot be edited because it is not available.",
-                        action_href="/plan",
-                        action_label="Start a new plan",
-                        eyebrow="Money plan",
-                    ),
-                    head_only=head_only,
-                )
-                return
-            body = render_plan_page(draft=plan_to_draft(saved.plan), source=saved)
-        else:
-            body = render_plan_page()
-        self._send(HTTPStatus.OK, body, head_only=head_only)
+        self._send(HTTPStatus.OK, render_plan_page(), head_only=head_only)
 
     def _create_plan(self) -> None:
         if not self._same_origin():
@@ -2345,9 +2252,16 @@ class DashboardHandler(BaseHTTPRequestHandler):
             )
             return
 
-        saved = save_plan(plan)
-        location = "/plan?" + urllib.parse.urlencode({"plan": saved.plan_id})
-        self._send(HTTPStatus.SEE_OTHER, "", headers=[("Location", location)])
+        self._send(
+            HTTPStatus.OK,
+            render_plan_page(
+                draft=draft,
+                plan=plan,
+                analysis=analyse(plan),
+                category_rows=category_rows,
+                spending_rows=spending_rows,
+            ),
+        )
 
     def _read_plan_body(self) -> bytes:
         raw_length = self.headers.get("Content-Length")

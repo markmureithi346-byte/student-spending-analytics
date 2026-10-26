@@ -60,12 +60,12 @@ data/raw/*.csv
       │
       ├── web.py          student-spending serve → dashboard + upload + money plan
       ├── platform.py     validate one upload, run it in an isolated workspace
-      └── personal.py     validate one student money plan, analyse it, store it locally
+      └── personal.py     validate one student money plan and analyse it in the page
 ```
 
 The report and the dashboard read the same SQL views; neither computes its own totals.
-The money planner is separate: it analyses only the values the student submits and saves
-the plan as JSON under `data/plans/`, so it never writes to the warehouse.
+The money planner is separate: it analyses only the values the student submits and
+renders the result in the same page, so it never writes to the warehouse or to disk.
 
 Every row read from the CSV must be accounted for:
 
@@ -99,7 +99,7 @@ virtual environment.
 ```powershell
 python scripts\generate_synthetic_data.py     # writes data/raw/*.csv
 student-spending --full-refresh               # deletes the warehouse, then rebuilds it
-python run_tests.py                           # 133 tests
+python run_tests.py                           # 128 tests
 start reports\spending_report.html
 student-spending serve --open                 # local server; blocks until Ctrl+C
 ```
@@ -256,7 +256,9 @@ Amounts accept `2,500`, `2500`, `12 500` and `KES 2500.50`, and are stored as in
 cents. The form starts with one category row and one spending row; the **+** buttons grow
 either list to 100. A plan cannot hold more than those limits.
 
-The result page is saved under an unguessable `/plan?plan=p-…` link and shows:
+Selecting **Run my analysis** keeps you on `/plan`: the page returns with every entered
+value still in the form and the analysis inserted below it at `#analysis`. There is no
+redirect, no saved plan, no result link and no separate file. The analysis shows:
 
 - cards for money available, planned, spent and left;
 - plain-language banners for unallocated money, overspending, unplanned spending and
@@ -268,23 +270,18 @@ The result page is saved under an unguessable `/plan?plan=p-…` link and shows:
 - an essential-versus-flexible split, the spending entries behind the totals, and the
   budgeting method you chose.
 
-![Money plan result](docs/images/plan-result.png)
+![Money plan analysis below the form](docs/images/plan-result.png)
 
 Everything is calculated from the submitted values: totals, shares, the daily average
 over the entered date span, and the over-plan and unplanned lists. The page does not
-advise on financial products or tell the student what they should spend.
+advise on financial products or tell the student what they should spend. The graphs are
+generated locally as inline SVG; no chart service, remote font or third-party request is
+involved.
 
-The result is a `303` redirect to the bookmarkable GET page, so a refresh does not save
-the plan twice. **Edit as a copy** opens the form prefilled and saves a new plan rather
-than overwriting the old one. Plans are JSON files under `data/plans/`, are not listed
-anywhere, and are never sent to a remote service. There is no account, login, bank
-connection or credential field; the only write endpoints are `POST /upload` and
-`POST /plan`.
-
-Keep the result link if you want to return: with no listing or index, the link is the
-only way back. To clear saved plans, remove the JSON files in `data/plans/` (the
-directory is git-ignored). This is a learning tool for made-up numbers, not a bank
-statement or a financial adviser.
+Because nothing is stored, there is no link to keep and no file to clean up. Adjust any
+value and run the analysis again; the page always reflects the form in front of you.
+There is no account, login, bank connection or credential field; the only write endpoints
+are `POST /upload` and `POST /plan`, and `POST /plan` writes nothing beyond the response.
 
 ![Money plan at phone width](docs/images/plan-mobile.png)
 
@@ -357,9 +354,8 @@ neither the input nor the limits are pushed off-screen.
 `POST /upload` and `POST /plan` are the only write paths. Requests are checked against
 `Origin` and `Sec-Fetch-Site` to block cross-site form posts, and the server keeps the
 `same-origin` referrer policy so a real browser sends a verifiable origin while still
-not leaking URLs to other sites. Uploads and plans are size-limited, and plan ids are
-validated against a strict pattern before a file is read. There is no login, so keep
-the server on loopback.
+not leaking URLs to other sites. Uploads and plan submissions are size-limited, and the
+planner keeps no plan ids or files. There is no login, so keep the server on loopback.
 
 ## Dashboard
 
@@ -517,7 +513,7 @@ python run_tests.py
 python -m unittest discover -s tests -t . -v
 ```
 
-133 tests covering: extraction failures and malformed rows, derived and explicit student
+128 tests covering: extraction failures and malformed rows, derived and explicit student
 dimensions, every validation rule, normalisation, duplicate handling, reconciliation
 accounting, idempotent loading, foreign keys and CHECK constraints, analytics totals and
 shares, anomaly flagging, all quality checks, end-to-end pipeline runs including rerun
@@ -530,11 +526,10 @@ The money planner adds tests for amount parsing (`2,500`, `KES 2500.50`, `1 000`
 and negative values), draft validation (names, duplicates, unknown spending categories,
 dates, bounds, at least two categories and one spending row, synthetic confirmation),
 integer-cent analysis (planned/spent/left/unallocated, category statuses, essential and
-flexible shares, daily average), JSON storage and reload, rejection of malformed or
-tampered plan files, and the web flow: form rendering, adding category and spending rows
-while preserving input without saving, both 100-row limits, saving a plan at both
-maxima, submission and bookmarkable result, edit-as-copy, validation errors that preserve
-input and save nothing, cross-site and
+flexible shares, daily average), and the web flow: form rendering, adding category and
+spending rows while preserving input without saving, both 100-row limits, submission that
+renders the analysis and charts in the same page with no redirect or saved file,
+validation errors that preserve input and render no analysis, cross-site and
 wrong-content-type guards, injected-text escaping, and analysis with zero planned amounts.
 
 The upload platform adds tests for single-CSV multipart validation (missing, duplicate
@@ -568,9 +563,9 @@ escaped analysis names.
 | Fixed sort and filter allow-lists | Untrusted input never becomes SQL text; `LIKE` wildcards are escaped and ordering is chosen from a dict |
 | Shared `theme.py` and `components.py` | The report, dashboard and planner use one visual language and one set of escaping/format helpers, so fixes apply to both |
 | User-defined category names instead of a fixed list | A student thinks in their own words; a fixed enum would force them to mislabel spending or use "Other" for everything. Duplicates are detected case-insensitively |
-| Planner writes JSON, not warehouse tables | It is a per-student worksheet, not a batch fact table; keeping it out of the warehouse preserves the pipeline's reconciliation identities and the sample dataset |
-| Plan analysis computes in Python from validated values | The page only reads the saved plan and shows arithmetic on the student's own numbers; it does not claim a statistical or advisory result |
-| Random, unguessable plan ids with no listing | There is no login, so the result link is the access token; a directory index would expose every saved plan to anyone on the machine |
+| Planner analyses in the response, without persistence | It is a per-student worksheet, not a batch fact table; rendering the result in the page avoids saved files, cleanup and stale links while preserving the pipeline's reconciliation identities and the sample dataset |
+| Plan analysis computes in Python from validated values | The page shows arithmetic on the student's own numbers and charts them as inline SVG; it does not claim a statistical or advisory result |
+| No plan ids or saved results | With nothing stored, there is no link to leak or file to delete; every submission reflects only the form the student just submitted |
 | Editable install with a console script | One command to run the pipeline; the `src/` layout also prevents tests from importing the package by accident |
 | CI runs the pipeline twice | Proves idempotency on a clean machine, not just in a local wrapper |
 
@@ -615,17 +610,16 @@ external services.
   comparison between periods. It does not import the sample warehouse or an uploaded
   CSV, and it has no recurring-entry or currency-conversion support; all amounts are KES.
 - The planner form starts with one category row and one spending row, each extendable
-  to 100 with its **+** button. Every submission creates a new saved plan, including
-  **Edit as a copy**. There is no in-place update, delete button, retention policy or
-  list of saved plans; remove files under `data/plans/` by hand.
-- Saved plans are unencrypted JSON containing the display name, amounts, categories and
-  notes. There is no login: anyone who can reach the server or read the disk and knows a
-  plan id can read that plan. That is acceptable only for made-up numbers on loopback.
+  to 100 with its **+** button. Every submission renders the analysis in the response
+  and stores nothing: there is no history, no saved plan, no result link and no file to
+  delete. Opening `/plan` again starts from a blank form.
+- Because nothing is saved, the analysis exists only in the page that answered the
+  submission. Printing or saving that browser page is the only way to keep a copy.
 - The plan analysis describes the entered numbers (totals, shares, averages and plan
   status). It is not a forecast, credit assessment or financial advice.
 - No authentication or encryption. That is acceptable only because the data is fake and
-  stays on the local disk; real financial data would require both, plus a deletion and
-  retention policy for uploaded files and saved plans.
+  stays in the request and the local response; real financial data would require both,
+  plus a deletion and retention policy for uploaded files.
 
 ## Future improvements
 

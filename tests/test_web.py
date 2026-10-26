@@ -950,10 +950,6 @@ class MoneyPlanTests(unittest.TestCase):
         _seed(cls.db_path)
         cls.report_path = cls.root / "baseline_report.html"
         cls.report_path.write_text(REPORT_SENTINEL, encoding="utf-8")
-        cls._config_patch = mock.patch.object(
-            config, "PLAN_DATA_DIR", cls.root / "plans"
-        )
-        cls._config_patch.start()
         cls.server = web.create_server(
             cls.db_path, port=0, report_path=cls.report_path
         )
@@ -967,7 +963,6 @@ class MoneyPlanTests(unittest.TestCase):
         cls.server.shutdown()
         cls.server.server_close()
         cls.thread.join(timeout=5)
-        cls._config_patch.stop()
         cls._tmp.cleanup()
 
     def fetch(self, path: str, *, method: str = "GET") -> tuple[int, dict, str]:
@@ -1067,18 +1062,9 @@ class MoneyPlanTests(unittest.TestCase):
         self, fields: list[tuple[str, str]] | None = None
     ) -> str:
         status, headers, page = self.post_form(fields or self.plan_fields())
-        self.assertEqual(status, 303, page[:300])
-        match = re.fullmatch(
-            r"/plan\?plan=(p-[A-Za-z0-9_-]{16})", headers.get("location", "")
-        )
-        self.assertIsNotNone(match, headers.get("location"))
-        return match.group(1)
-
-    def plan_files(self) -> set[str]:
-        root = Path(config.PLAN_DATA_DIR)
-        if not root.is_dir():
-            return set()
-        return {entry.name for entry in root.glob("*.json")}
+        self.assertEqual(status, 200, page[:300])
+        self.assertNotIn("location", headers)
+        return page
 
     def test_plan_page_and_entry_points(self) -> None:
         status, _, page = self.fetch("/plan")
@@ -1095,7 +1081,7 @@ class MoneyPlanTests(unittest.TestCase):
             self.assertIn(f'name="{control}"', page)
         self.assertNotIn('name="category_name_2"', page)
         self.assertNotIn('name="spending_date_2"', page)
-        self.assertIn('action="/plan"', page)
+        self.assertIn('action="/plan#analysis"', page)
         self.assertIn("There is no fixed category list", page)
         self.assertIn("Made-up numbers only.", page)
         self.assertIn('href="/upload"', page)
@@ -1139,7 +1125,7 @@ class MoneyPlanTests(unittest.TestCase):
         self.assertIn('value="Rent"', page)
         self.assertIn('value="October rent"', page)
         self.assertIn("2 of 100 category rows", page)
-        self.assertEqual(self.plan_files(), set())
+        self.assertNotIn("What the numbers say", page)
 
     def test_add_spending_keeps_typed_values_without_saving(self) -> None:
         fields = self.plan_fields(
@@ -1161,9 +1147,9 @@ class MoneyPlanTests(unittest.TestCase):
         self.assertIn('value="Amina"', page)
         self.assertIn('value="October rent"', page)
         self.assertIn("2 of 100 spending rows", page)
-        self.assertEqual(self.plan_files(), set())
+        self.assertNotIn("What the numbers say", page)
 
-    def test_extra_category_rows_are_saved(self) -> None:
+    def test_extra_category_rows_reach_the_inline_analysis(self) -> None:
         categories = tuple(
             (f"Category {number}", "0", "flexible") for number in range(1, 14)
         )
@@ -1172,15 +1158,12 @@ class MoneyPlanTests(unittest.TestCase):
             spendings=(("2026-10-01", "Category 1", "10", "Tea"),),
         )
         fields.extend([("category_rows", "13"), ("spending_rows", "1")])
-        plan_id = self.create_plan(fields)
+        page = self.create_plan(fields)
 
-        _, _, page = self.fetch(f"/plan?plan={plan_id}")
         self.assertIn("Category 13", page)
-
-        path = Path(config.PLAN_DATA_DIR) / f"{plan_id}.json"
-        payload = json.loads(path.read_text(encoding="utf-8"))
-        self.assertEqual(len(payload["categories"]), 13)
-        self.assertEqual(payload["categories"][-1]["name"], "Category 13")
+        self.assertIn("13 categories", page)
+        self.assertIn('name="category_name_13"', page)
+        self.assertIn("analysis-categories", page)
 
     def test_spending_rows_stop_at_the_limit(self) -> None:
         fields = self.plan_fields()
@@ -1204,7 +1187,7 @@ class MoneyPlanTests(unittest.TestCase):
         self.assertIn('name="spending_date_100"', page)
         self.assertNotIn('name="spending_date_101"', page)
 
-    def test_maximum_rows_can_be_saved(self) -> None:
+    def test_maximum_rows_are_analysed_inline(self) -> None:
         categories = tuple(
             (f"Category {number}", "0", "flexible") for number in range(1, 101)
         )
@@ -1214,14 +1197,13 @@ class MoneyPlanTests(unittest.TestCase):
         )
         fields = self.plan_fields(categories=categories, spendings=spendings)
         fields.extend([("category_rows", "100"), ("spending_rows", "100")])
-        plan_id = self.create_plan(fields)
+        page = self.create_plan(fields)
 
-        path = Path(config.PLAN_DATA_DIR) / f"{plan_id}.json"
-        payload = json.loads(path.read_text(encoding="utf-8"))
-        self.assertEqual(len(payload["categories"]), 100)
-        self.assertEqual(len(payload["spendings"]), 100)
-        self.assertEqual(payload["categories"][-1]["name"], "Category 100")
-        self.assertEqual(payload["spendings"][-1]["category"], "Category 100")
+        self.assertIn('name="category_name_100"', page)
+        self.assertIn('name="spending_note_100"', page)
+        self.assertIn("100 categories", page)
+        self.assertIn("100 spending entries", page)
+        self.assertIn("analysis-spending", page)
 
     def test_category_rows_stop_at_the_limit(self) -> None:
         fields = self.plan_fields()
@@ -1245,23 +1227,14 @@ class MoneyPlanTests(unittest.TestCase):
         self.assertIn('name="category_name_100"', page)
         self.assertNotIn('name="category_name_101"', page)
 
-    def test_plan_submission_is_saved_and_bookmarkable(self) -> None:
-        plan_id = self.create_plan()
-        path = Path(config.PLAN_DATA_DIR) / f"{plan_id}.json"
-        self.assertTrue(path.is_file())
-        payload = json.loads(path.read_text(encoding="utf-8"))
-        self.assertEqual(payload["version"], 1)
-        self.assertEqual(payload["plan_id"], plan_id)
-        self.assertEqual(payload["student_name"], "Amina")
-        self.assertEqual(payload["money_available_cents"], 1_400_000)
-        self.assertEqual(payload["categories"][0]["name"], "Rent")
-        self.assertEqual(payload["spendings"][0]["amount_cents"], 600_000)
-
-        status, headers, page = self.fetch(f"/plan?plan={plan_id}")
+    def test_plan_submission_renders_analysis_in_the_same_page(self) -> None:
+        status, headers, page = self.post_form(self.plan_fields())
         self.assertEqual(status, 200)
-        self.assertEqual(headers["Cache-Control"], "no-store")
+        self.assertNotIn("location", headers)
+        self.assertEqual(headers["cache-control"], "no-store")
         for text in (
-            "Money map for <span>Amina</span>",
+            'id="analysis"',
+            "What the numbers say",
             "KES 14,000.00",
             "KES 13,500.00",
             "KES 12,500.00",
@@ -1276,40 +1249,36 @@ class MoneyPlanTests(unittest.TestCase):
             "Essential",
             "Flexible",
             "1 category is over plan by KES 300.00 in total: Fun.",
+            "analysis-categories",
+            "analysis-spending",
+            "analysis-method",
+            "generated in this page",
         ):
             self.assertIn(text, page)
+        self.assertIn("<svg", page)
+        self.assertNotIn("/plan?plan=", page)
+        self.assertNotIn("data/plans/", page)
+        self.assertIsNone(re.search(r"/plan\?plan=p-[A-Za-z0-9_-]{16}", page))
 
-        self.assertIn(f"/plan?edit={plan_id}", page)
-        self.assertIn("data/plans/", page)
+        self.assertIn('name="student_name" type="text"', page)
+        self.assertIn('value="Amina"', page)
+        self.assertIn('value="Rent"', page)
+        self.assertIn('action="/plan#analysis"', page)
 
-        _, _, form_page = self.fetch("/plan")
-        self.assertNotIn(plan_id, form_page)
-        self.assertNotIn("Amina", form_page)
+    def test_plan_query_parameters_render_a_fresh_form(self) -> None:
+        for path in (
+            "/plan?plan=../../etc/passwd",
+            "/plan?plan=p-short",
+            "/plan?edit=p-short",
+        ):
+            with self.subTest(path=path):
+                status, _, page = self.fetch(path)
+                self.assertEqual(status, 200)
+                self.assertIn('name="student_name"', page)
+                self.assertNotIn("Amina", page)
+                self.assertNotIn("What the numbers say", page)
 
-    def test_edit_prefills_and_saves_a_copy(self) -> None:
-        first = self.create_plan()
-        status, _, edit_page = self.fetch(f"/plan?edit={first}")
-        self.assertEqual(status, 200)
-        self.assertIn("Editing a copy", edit_page)
-        self.assertIn('value="Amina"', edit_page)
-        self.assertIn('value="Rent"', edit_page)
-        self.assertIn('value="6000.00"', edit_page)
-        self.assertIn('name="synthetic" value="yes" checked', edit_page)
-        self.assertIn(f"/plan?plan={first}", edit_page)
-
-        second = self.create_plan(self.plan_fields(name="Amina Updated"))
-        self.assertNotEqual(first, second)
-        self.assertTrue((Path(config.PLAN_DATA_DIR) / f"{first}.json").is_file())
-        self.assertTrue((Path(config.PLAN_DATA_DIR) / f"{second}.json").is_file())
-
-        _, _, first_page = self.fetch(f"/plan?plan={first}")
-        self.assertIn("Amina", first_page)
-        self.assertNotIn("Amina Updated", first_page)
-        _, _, second_page = self.fetch(f"/plan?plan={second}")
-        self.assertIn("Amina Updated", second_page)
-
-    def test_validation_errors_preserve_input_and_save_nothing(self) -> None:
-        before = self.plan_files()
+    def test_validation_errors_preserve_input_and_render_no_analysis(self) -> None:
         cases = [
             (self.plan_fields(synthetic=None), "Confirm that the numbers are made up"),
             (
@@ -1331,27 +1300,7 @@ class MoneyPlanTests(unittest.TestCase):
                 self.assertIn(message, page)
                 self.assertIn('value="Amina"', page)
                 self.assertIn("Check these details.", page)
-        self.assertEqual(self.plan_files(), before)
-
-    def test_invalid_links_and_tampered_stored_plans(self) -> None:
-        for path in (
-            "/plan?plan=../../etc/passwd",
-            "/plan?plan=p-short",
-            "/plan?edit=p-short",
-        ):
-            with self.subTest(path=path):
-                status, _, page = self.fetch(path)
-                self.assertEqual(status, 404)
-                self.assertIn("Plan not found", page)
-
-        plan_id = self.create_plan()
-        path = Path(config.PLAN_DATA_DIR) / f"{plan_id}.json"
-        payload = json.loads(path.read_text(encoding="utf-8"))
-        payload["categories"][0]["planned_cents"] = -5
-        path.write_text(json.dumps(payload), encoding="utf-8")
-        status, _, page = self.fetch(f"/plan?plan={plan_id}")
-        self.assertEqual(status, 404)
-        self.assertIn("Plan not found", page)
+                self.assertNotIn("What the numbers say", page)
 
     def test_request_guards(self) -> None:
         fields = self.plan_fields()
@@ -1406,11 +1355,13 @@ class MoneyPlanTests(unittest.TestCase):
         self.assertEqual(headers["allow"], "GET, HEAD")
         self.assertIn("Read-only dashboard", page)
 
-        status, _, _ = self.post_form(fields, headers={"Origin": self.base})
-        self.assertEqual(status, 303)
+        status, headers, page = self.post_form(fields, headers={"Origin": self.base})
+        self.assertEqual(status, 200)
+        self.assertNotIn("location", headers)
+        self.assertIn("What the numbers say", page)
 
     def test_injected_text_is_escaped(self) -> None:
-        plan_id = self.create_plan(
+        page = self.create_plan(
             self.plan_fields(
                 name="<script>alert('name')</script>",
                 note="<script>note()</script>",
@@ -1423,15 +1374,13 @@ class MoneyPlanTests(unittest.TestCase):
                 ),
             )
         )
-        status, _, page = self.fetch(f"/plan?plan={plan_id}")
-        self.assertEqual(status, 200)
         self.assertIn("&lt;script&gt;", page)
         self.assertIn("&lt;img src=x&gt;", page)
         self.assertNotIn("<script>", page)
         self.assertNotIn("<img src=x>", page)
 
     def test_no_planned_amounts_still_analyzes(self) -> None:
-        plan_id = self.create_plan(
+        page = self.create_plan(
             self.plan_fields(
                 categories=(("Food", "", "essential"), ("Fun", "", "flexible")),
                 spendings=(
@@ -1440,8 +1389,6 @@ class MoneyPlanTests(unittest.TestCase):
                 ),
             )
         )
-        status, _, page = self.fetch(f"/plan?plan={plan_id}")
-        self.assertEqual(status, 200)
         self.assertIn("No planned amounts were entered", page)
         self.assertIn("actual spending only", page)
         self.assertIn("KES 1,300.00", page)

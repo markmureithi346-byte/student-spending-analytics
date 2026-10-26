@@ -1,12 +1,8 @@
 from __future__ import annotations
 
-import json
-import tempfile
 import unittest
-from pathlib import Path
-from unittest import mock
 
-from student_spending import config, personal
+from student_spending import personal
 
 
 def plan_form(
@@ -251,75 +247,6 @@ class AnalysisTests(unittest.TestCase):
         )
         self.assertEqual(len(analysis.unplanned), 2)
         self.assertEqual(analysis.over_plan, ())
-
-
-class StorageTests(unittest.TestCase):
-    def setUp(self) -> None:
-        self._tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(self._tmp.cleanup)
-        self.root = Path(self._tmp.name) / "plans"
-        self._patch = mock.patch.object(config, "PLAN_DATA_DIR", self.root)
-        self._patch.start()
-        self.addCleanup(self._patch.stop)
-        plan, errors = build_plan()
-        self.assertEqual(errors, [])
-        assert plan is not None
-        self.plan = plan
-
-    def test_save_and_load_round_trip(self) -> None:
-        saved = personal.save_plan(self.plan)
-        self.assertTrue(personal.is_valid_plan_id(saved.plan_id))
-        self.assertTrue((self.root / f"{saved.plan_id}.json").is_file())
-        payload = json.loads(
-            (self.root / f"{saved.plan_id}.json").read_text(encoding="utf-8")
-        )
-        self.assertEqual(payload["version"], 1)
-        self.assertEqual(payload["money_available_cents"], 1_400_000)
-        loaded = personal.load_plan(saved.plan_id)
-        self.assertIsNotNone(loaded)
-        assert loaded is not None
-        self.assertEqual(loaded.plan, self.plan)
-        self.assertEqual(loaded.created_at, saved.created_at)
-
-    def test_invalid_ids_and_corrupt_files_return_none(self) -> None:
-        for value in (
-            "",
-            "p-short",
-            "../../etc/passwd",
-            "p-ABCDEFGHIJKLMNOP",
-            "p-abcdefghijklmnop/../x",
-        ):
-            with self.subTest(value=value):
-                self.assertIsNone(personal.load_plan(value))
-
-        self.root.mkdir(parents=True)
-        (self.root / "p-abcdefghijklmnop.json").write_text("{not json", encoding="utf-8")
-        self.assertIsNone(personal.load_plan("p-abcdefghijklmnop"))
-
-    def test_tampered_stored_values_are_rejected(self) -> None:
-        saved = personal.save_plan(self.plan)
-        path = self.root / f"{saved.plan_id}.json"
-        payload = json.loads(path.read_text(encoding="utf-8"))
-        payload["money_available_cents"] = "lots"
-        path.write_text(json.dumps(payload), encoding="utf-8")
-        self.assertIsNone(personal.load_plan(saved.plan_id))
-
-        payload["money_available_cents"] = 1_400_000
-        payload["spendings"][0]["category"] = "Unknown"
-        path.write_text(json.dumps(payload), encoding="utf-8")
-        self.assertIsNone(personal.load_plan(saved.plan_id))
-
-    def test_plan_to_draft_uses_exact_cents(self) -> None:
-        plan, errors = build_plan(
-            categories=(("Food", "0.05", "essential"), ("Fun", "1234.50", "flexible")),
-            spendings=(("2026-10-01", "Food", "0.05", ""),),
-        )
-        self.assertEqual(errors, [])
-        assert plan is not None
-        draft = personal.plan_to_draft(plan)
-        self.assertEqual(draft.money_available, "14000.00")
-        self.assertEqual(draft.category(1).planned, "0.05")
-        self.assertEqual(draft.category(2).planned, "1234.50")
 
 
 class FormParsingTests(unittest.TestCase):

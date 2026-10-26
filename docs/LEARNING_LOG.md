@@ -103,10 +103,9 @@ useful to whoever maintains this project next — including future me.
   console. Rendering bugs (grammar, clipped headers, dead grid space) only appeared in
   the screenshots, not in the unit tests.
 - **The planner belongs to one student, not the warehouse.** Its input is a worksheet,
-  not a batch fact table. Saving it as JSON under `data/plans/` keeps the pipeline's
-  reconciliation identities and sample dataset untouched, and lets the result page be a
-  cacheable GET view. The trade-off is no SQL analytics over plans and no cross-student
-  history.
+  not a batch fact table. Analysing it inside the response keeps the pipeline's
+  reconciliation identities and sample dataset untouched, and avoids a second store.
+  The trade-off is no SQL analytics over plans and no cross-student history.
 - **User-defined categories need a canonical key.** The student can write `Food`,
   `food` or `FOOD`; storing the first spelling and matching with `casefold()` keeps the
   display readable while treating the rows as one category. Duplicates are rejected
@@ -115,13 +114,13 @@ useful to whoever maintains this project next — including future me.
   amount can still receive spending; it is labelled **No plan**, not treated as a
   budget of zero or as an error. When every planned amount is blank, the page reports
   actual spending and shares and says there is no plan to compare.
-- **Saved plans are immutable.** **Edit as a copy** creates a new plan id instead of
-  overwriting the old file. That keeps every result link honest, at the cost of files
-  accumulating; a delete/retention UI is still missing.
-- **The result link is the access token.** Without a login, a random `p-<16 char>` id and
-  no directory listing are the only protections. This is acceptable for made-up numbers
-  on loopback, not for real finances. Ids are validated against a strict pattern before
-  any path is built.
+- **The analysis lives in the response, not in a store.** `POST /plan` validates the
+  draft, analyses it and returns the same page with totals and SVG charts below the form
+  (`#analysis`), status 200 and no `Location`. The student keeps every entered value and
+  can adjust and resubmit immediately. Removing saved plan files, plan ids, the
+  bookmarkable result route and edit-as-copy also removed the only reason the planner
+  needed a filesystem. The trade-off is that a result cannot be revisited by URL; the
+  browser page is the only copy unless the student prints or saves it.
 - **Two rendering charts, one scale.** The ranked chart answers "where did the money
   go?"; the grouped chart puts each category's plan next to its actual spend on a shared
   axis. Both are inline SVG with tooltips, and both use the same shortened labels so a
@@ -134,8 +133,8 @@ useful to whoever maintains this project next — including future me.
   make the added rows survive validation errors and final submission.
 - **Two row maxima share one parser budget.** Each category row posts three fields and
   each spending row four, so a form with both lists at 100 needs room for roughly 700
-  fields. `MAX_FORM_FIELDS` sits at 800, and a test saves a plan at both maxima so the
-  constant cannot drift below what the form can actually produce.
+  fields. `MAX_FORM_FIELDS` sits at 800, and a test renders an analysis with both lists
+  at their maxima so the constant cannot drift below what the form can actually produce.
 - **Start with one row, grow on demand.** Both lists open with a single row and use the
   **+** control to add the next one. Twelve empty rows made the form look like homework
   and buried the controls; one row matches how a student fills a notebook. The minimum
@@ -309,10 +308,10 @@ rows; and the difference between "valid" and "unusual".
    filter values and rebuild the query on load.
 8. Let the planner import one student's transactions from the warehouse, map them to the
    student's own category names, and compare the imported actuals with the plan.
-9. Add a month field to a plan and compare two saved plans for the same student without
-   merging their files.
-10. Add a plan deletion flow with a confirmation step, then write a test proving that a
-    guessed id cannot delete a plan.
+9. Add a month field to the worksheet and compare two analyses for the same student
+   without storing either one.
+10. Add an optional download of the current analysis as a standalone HTML file, generated
+    on demand rather than persisted.
 
 ## Open questions
 
@@ -323,7 +322,7 @@ rows; and the difference between "valid" and "unusual".
   or warehouse table?
 - If this ever held real data, what authentication and access logging would be required
   before any route left loopback?
-- Should a saved plan expire, or should the server offer an explicit delete action rather
-  than relying on the student to remove files under `data/plans/`?
+- Should the planner offer an explicit "download this analysis" action, or is the browser
+  print/save flow enough for a worksheet that deliberately stores nothing?
 - Should the planner support more than one currency, or is KES-only the honest scope for
   this dataset?
