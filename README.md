@@ -2,7 +2,9 @@
 
 A local data engineering pipeline that turns raw, deliberately messy student expense
 records into a validated SQLite warehouse, reproducible analytics, automated data
-quality checks, an HTML report and a filterable read-only dashboard.
+quality checks, an HTML report, and a filterable dashboard. The same server accepts a
+new three-CSV bundle, runs the pipeline into an isolated workspace, and opens the
+analysis without touching the committed warehouse.
 
 Built as a learning project: the code is intentionally module-by-module and documented
 so the reasoning behind each stage is visible.
@@ -42,7 +44,8 @@ data/raw/*.csv
       │
       ├── report.py       reports/spending_report.html (charts + tables from SQL)
       │
-      └── web.py          student-spending serve → interactive read-only dashboard
+      ├── web.py          student-spending serve → dashboard + upload workspace
+      └── platform.py     validate an uploaded bundle, run it in an isolated workspace
 ```
 
 The report and the dashboard read the same SQL views; neither computes its own totals.
@@ -79,10 +82,13 @@ virtual environment.
 ```powershell
 python scripts\generate_synthetic_data.py     # writes data/raw/*.csv
 student-spending --full-refresh               # deletes the warehouse, then rebuilds it
-python run_tests.py                           # 81 tests
+python run_tests.py                           # 92 tests
 start reports\spending_report.html
 student-spending serve --open                 # dashboard; blocks until Ctrl+C
 ```
+
+Open `http://127.0.0.1:8000/` for the sample dashboard or
+`http://127.0.0.1:8000/upload` to analyze your own synthetic CSVs.
 
 Omit `--full-refresh` to rerun against the existing warehouse. Because loading is
 upsert-based and change-detected, a rerun inserts nothing and updates nothing.
@@ -204,6 +210,69 @@ These are valid transactions, not errors. They are flagged and kept.
 Every rejected or quarantined row is written to
 `data/quarantine/rejections_<run_id>.csv` and to the warehouse audit tables.
 
+## Upload and analyze your own CSVs
+
+![Upload workspace](docs/images/upload-page.png)
+
+Start the server and open `http://127.0.0.1:8000/upload`. Supply the three inputs the
+pipeline needs — transactions, student profiles and budgets — give the analysis an
+optional name, confirm that the files are synthetic, and select **Run analysis**.
+Links on the form download the committed sample files as a known-good starting point.
+
+The browser sends the bundle to `POST /upload`. The server validates the multipart
+form, writes canonical copies, and runs the same `run_pipeline` used by the CLI into a
+workspace of its own:
+
+```
+data/uploads/<analysis_id>/transactions.csv, profiles.csv, budgets.csv, metadata.json
+warehouse/uploads/<analysis_id>.db
+reports/uploads/<analysis_id>/spending_report.html
+```
+
+The response is a `303` redirect to `/?analysis=<analysis_id>`. Every filter, page,
+CSV export and report link on that page carries the id, so the whole view remains
+bookmarkable and self-contained. **Recent analyses** on `/upload` lists finished
+workspaces, their status and row counts. The committed `warehouse/student_spending.db`
+is never modified by an upload.
+
+![Analysis dashboard](docs/images/analysis-dashboard.png)
+
+If a data quality check fails, the pipeline exits with code `1` but still writes the
+warehouse and report. The analysis opens with a red **Quality alert** banner reporting
+how many checks failed, and the rows remain available for review. The full report lists
+the individual check results. An unrecoverable pipeline error returns `422`, explains the
+problem on the upload page, and removes the partial workspace.
+
+| Limit | Value |
+|---|---|
+| File type | `.csv` with a `.csv` filename, UTF-8 text |
+| File size | 2 MB per file; 6 MB for all three |
+| Data rows | 50,000 per file, after a header and at least one non-empty row |
+| Analysis name | 80 characters; optional, defaults to "Untitled analysis" |
+| Form parts | 12 fields, with no duplicate or unknown field names |
+
+Required columns (extra columns are allowed):
+
+- transactions: `transaction_id, student_id, transaction_date, amount_kes, category,
+  description, payment_method, merchant, is_recurring`
+- profiles: `student_id, profile_label, campus, study_year, monthly_income_kes`
+- budgets: `student_id, budget_month, category, budget_kes`
+
+A missing column, a non-UTF-8 file, a header-only file or an unconfirmed upload is
+rejected before any pipeline work starts. Client filenames are recorded in metadata
+only; files on disk always use fixed names inside a generated analysis id. Uploaded
+files are saved locally and are never sent to a remote service.
+
+![Upload workspace at phone width](docs/images/upload-mobile.png)
+
+At phone width the upload fields stack into one column and the history card moves below
+the form, so neither the inputs nor the limits are pushed off-screen.
+
+The upload endpoint is the only write path. Requests are checked against `Origin` and
+`Sec-Fetch-Site` to block cross-site form posts, and the server keeps the
+`same-origin` referrer policy so a real browser sends a verifiable origin while still
+not leaking URLs to other sites. There is no login, so keep the server on loopback.
+
 ## Dashboard
 
 ![Dashboard overview](docs/images/dashboard-overview.png)
@@ -236,9 +305,10 @@ rather than crashing the page or being passed through to SQL.
 
 The server binds to `127.0.0.1` by default, opens SQLite with `mode=ro` **and**
 `PRAGMA query_only = ON`, and opens a short-lived connection per request. It sends a
-restrictive Content-Security-Policy, `nosniff`, `no-store` and `no-referrer` headers,
-escapes all database text into HTML, and prefixes spreadsheet-formula characters in CSV
-exports. It has no upload, login or write endpoint, and serves no arbitrary files.
+restrictive Content-Security-Policy, `nosniff`, `no-store` and a `same-origin` referrer
+policy, escapes all database text into HTML, and prefixes spreadsheet-formula characters
+in CSV exports. Apart from `POST /upload` (which only starts an isolated pipeline run),
+it has no login or write endpoint, and serves no arbitrary files.
 
 ![Dashboard at phone width](docs/images/dashboard-mobile.png)
 
@@ -266,15 +336,16 @@ student-spending-analytics/
 ├── .github/workflows/        CI: tests + two pipeline runs on 2 OSes × 2 Pythons
 ├── data/
 │   ├── raw/                  committed synthetic inputs (3 CSV files)
+│   ├── uploads/              isolated copies of uploaded analyses (git-ignored)
 │   ├── quarantine/           generated rejection audit CSVs (git-ignored)
 │   └── processed/            reserved for future exports (git-ignored)
 ├── docs/                     data dictionary, quality policy, learning log
-├── reports/                  generated HTML report (git-ignored)
+├── reports/                  generated HTML report; uploads/ per analysis (git-ignored)
 ├── scripts/                  generate_synthetic_data.py, check_env.py
 ├── sql/                      schema.sql, example_queries.sql
-├── src/student_spending/     pipeline, report, shared UI and dashboard modules
-├── tests/                    81 unittest cases
-├── warehouse/                generated SQLite database (git-ignored)
+├── src/student_spending/     pipeline, report, platform and dashboard modules
+├── tests/                    92 unittest cases
+├── warehouse/                generated SQLite database; uploads/ per analysis (git-ignored)
 ├── logs/                     pipeline.log (git-ignored)
 ├── pyproject.toml            package metadata, console script, build config
 ├── CHANGELOG.md              release history
@@ -356,14 +427,21 @@ python run_tests.py
 python -m unittest discover -s tests -t . -v
 ```
 
-81 tests covering: extraction failures and malformed rows, every validation rule,
+92 tests covering: extraction failures and malformed rows, every validation rule,
 normalisation, duplicate handling, reconciliation accounting, idempotent loading,
 foreign keys and CHECK constraints, analytics totals and shares, anomaly flagging,
 all quality checks, an end-to-end pipeline run including rerun behaviour, and the
-dashboard: filter composition against hand-written SQL, literal wildcard and injection
-attempts, sort/date/allow-list validation, pagination clamping, HTML escaping, CSV
-formula guards, report routing, security headers, read-only enforcement and CLI
-dispatch.
+web surface: filter composition against hand-written SQL, literal wildcard and
+injection attempts, sort/date/allow-list validation, pagination clamping, HTML
+escaping, CSV formula guards, report routing, security headers, read-only enforcement
+and CLI dispatch.
+
+The upload platform adds tests for multipart validation (missing, duplicate and unknown
+fields; wrong extensions; missing headers; header-only and binary files; size and part
+limits; the synthetic-data confirmation), isolated files, database and report per
+analysis, analysis-aware filter/pagination/export/report links, two-upload isolation,
+quality-failure alerts, cleanup after a 422, cross-origin and `Origin: null` rejection,
+traversal-resistant analysis ids, fixed sample routes and escaped analysis names.
 
 ## Design decisions
 
@@ -378,6 +456,10 @@ dispatch.
 | Validity vs anomaly separated | A large purchase is legitimate but interesting; conflating the two loses data |
 | HTML report with inline SVG | Dependency-free, self-contained, and reads only from the database |
 | Dashboard on `http.server`, no framework | A read-only explorer needs routing, HTML and SQL, all of which the standard library provides; filters stay as bookmarkable GET state |
+| Upload runs the existing pipeline in an isolated workspace | One source of truth for validation, loading and analytics; a bad upload cannot alter the committed warehouse, and each analysis remains reproducible from its saved inputs |
+| Fixed filenames inside a generated analysis id | Client-supplied names never become paths; the strict id pattern makes traversal and ambiguous workspaces impossible |
+| Analysis id carried through every link | A filtered view, CSV download and report stay attached to the same warehouse without server-side session state |
+| Two-layer upload guard: origin check plus synthetic confirmation | The server rejects cross-site form posts and the submitter explicitly confirms the data is fake; neither is a substitute for authentication, which is why binding stays on loopback by default |
 | Read-only SQLite URI plus `query_only` | The dashboard cannot accidentally write, even if a handler is wrong; each request gets its own short-lived connection |
 | Fixed sort and filter allow-lists | Untrusted input never becomes SQL text; `LIKE` wildcards are escaped and ordering is chosen from a dict |
 | Shared `theme.py` and `components.py` | The report and dashboard use one visual language and one set of escaping/format helpers, so fixes apply to both |
@@ -409,14 +491,24 @@ external services.
 - Quarantine records accumulate per run; there is no resolution UI or "cleared" state.
 - The dashboard is single-user and loopback-only. It has no login, saved views or
   concurrent-writer coordination; it is a viewer for a batch-built warehouse.
+- Uploads run synchronously inside the request, so a large bundle keeps that request
+  open until the pipeline finishes. There is no queue, progress stream, cancellation,
+  retention policy or delete button; analysis directories accumulate until removed by
+  hand. Loading is serialised by a process-wide lock, so two uploads do not write at once.
+- Upload validation checks structure (filenames, encoding, headers, sizes and row
+  counts), not the meaning of every value. Semantic problems are handled by the normal
+  validation and quality stages and appear as quarantined rows or a quality alert.
 - Dashboard filters are applied on submit rather than live-updating, and search is a
   substring match over two text columns, not a ranked full-text search.
-- No authentication or encryption. That is acceptable only because the data is fake;
-  real financial data would require both.
+- No authentication or encryption. That is acceptable only because the data is fake and
+  stays on the local disk; real financial data would require both, plus a deletion and
+  retention policy for uploaded files.
 
 ## Future improvements
 
 - Incremental extraction (file watermark + `ingested_at`) and a scheduler.
+- Run uploads as a background job with progress, cancellation and a retention/delete
+  policy for analysis workspaces.
 - Resolve quarantined rows through a reviewed fixes file with lineage back to the run.
 - dbt-style transformation tests or a data quality framework once the SQL grows.
 - Postgres or DuckDB when data outgrows a single SQLite file.

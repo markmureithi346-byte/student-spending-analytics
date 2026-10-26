@@ -14,13 +14,14 @@ useful to whoever maintains this project next — including future me.
 | 4. Database design and loading | done | 8 tables, 12 views, PK/FK/CHECK, upsert loading |
 | 5. SQL analytics | done | monthly, category, weekday, budget, week-over-week queries |
 | 6. Analytical modelling | done | fact/dimension split, single grain per view |
-| 7. Quality and testing | done | 12 checks; the suite grew to 81 tests by phase 13 |
+| 7. Quality and testing | done | 12 checks; the suite grew to 92 tests by phase 14 |
 | 8. Logging and repeatability | done | console + file logging, run table, idempotent rerun |
 | 9. Visualisation | done | dependency-free HTML report from SQL |
 | 10. Documentation | done | README, data dictionary, quality policy, examples |
 | 11. Packaging and release | done | `pyproject.toml`, console script, wheel build, CI matrix, MIT licence |
 | 12. Report experience | done | animated purple theme, sticky nav, responsive stacked tables, refreshed screenshots |
 | 13. Interactive dashboard | done | `web.py`, `student-spending serve`, 20 dashboard tests, browser-checked at 1280 px and 390 px |
+| 14. Upload platform | done | `platform.py`, `/upload`, isolated workspaces, 11 upload tests (92 total), browser-checked upload and analysis |
 
 ## Decisions worth remembering
 
@@ -68,6 +69,27 @@ useful to whoever maintains this project next — including future me.
 - **Two independent read-only layers.** The SQLite URI includes `mode=ro` and every
   connection also runs `PRAGMA query_only = ON`. Tests attempt writes through the same
   connection factory; both layers would have to fail for a handler to modify data.
+- **An upload is a workspace, not an edit.** Every bundle gets a generated id, its own
+  input directory, SQLite file and report. The committed warehouse is never in the write
+  path, so a bad upload cannot damage the sample analysis and two datasets can stay
+  open in different tabs. The cost is disk usage and no delete/retention UI yet.
+- **One pipeline, called from two places.** The upload route imports `PipelineOptions`
+  and `run_pipeline` from the CLI instead of reimplementing loading. Capturing stdout
+  keeps the HTTP response clean, and a process-wide lock serialises runs.
+- **A failed quality check is not a failed upload.** Exit code `1` still leaves a usable
+  warehouse and report, so the analysis opens with a banner. Only exit codes `2`/`3` or
+  zero accepted rows are treated as upload failures, and those remove partial files.
+- **The multipart form is parsed, not trusted.** `email.parser` reads the parts, fixed
+  canonical filenames replace client names, the analysis id has a strict pattern, and
+  validation happens before the pipeline is called. The form also requires an explicit
+  synthetic-data confirmation.
+- **Browser security headers have behaviour side effects.** `Referrer-Policy:
+  no-referrer` made Chromium send `Origin: null` on the form POST, so the origin guard
+  rejected every real upload even though HTTP tests passed. Switching to `same-origin`
+  keeps cross-site referrers private while allowing the browser to prove its origin.
+- **Analysis state belongs in the URL.** The `analysis` id is threaded through filters,
+  pagination, export and report links. No session store is needed, and an uploaded view
+  survives reloads and sharing just like the sample dashboard.
 - **Browser verification is part of "done".** The dashboard was checked in headless
   Chrome at 1280 px and 390 px: no horizontal overflow, full-width mobile controls,
   correct stacked labels, sticky navigation, reduced-motion behaviour and an empty
@@ -169,6 +191,21 @@ useful to whoever maintains this project next — including future me.
     the span below 900 px and 640 px.
     *Lesson:* grid spans have to be re-checked at every breakpoint, not just the widest.
 
+15. **Every real browser upload was rejected with 403.** The unit and HTTP tests passed
+    because they sent no `Origin` or a matching one. Chromium, following
+    `Referrer-Policy: no-referrer`, sent `Origin: null` on the multipart form POST, and
+    the same-origin guard rejected it. The page navigated to a network error page and
+    the pipeline never ran.
+    *Fix:* send `Referrer-Policy: same-origin` and keep rejecting `Origin: null`.
+    *Lesson:* security headers change browser request behaviour; an upload flow must be
+    exercised from a real form submission, not only from a hand-built HTTP request.
+
+16. **The filter-link test pinned query-string order.** It expected the analysis id
+    before the category, but `_export_href` emits the date window first. The product was
+    correct; the assertion was brittle.
+    *Fix:* parse the URL with `urlsplit` and `parse_qs`, then assert the parameter values.
+    *Lesson:* test URL semantics, not the incidental order of encoded parameters.
+
 ## Concepts this project exercises
 
 Extraction boundaries; per-row error isolation; normalisation vs validation; policy for
@@ -176,10 +213,11 @@ duplicates; surrogate vs natural keys; fact/dimension grain; composite primary k
 foreign keys and CHECK constraints; transactions; upsert and change detection; hashing
 for idempotency; CASE expressions; joins; CTEs; window functions (`LAG`, and window
 aggregates via SQLite); reconciliation accounting; logging levels; test doubles; HTML
-escaping; HTTP request/response handling; server-side rendering; GET form state;
-threaded request handling; read-only database connections; `LIKE` escaping; content
-security policy; CSV formula injection; and the difference between "valid" and
-"unusual".
+escaping; HTTP request/response handling; multipart/form-data parsing and POST/redirect
+flows; origin and `Sec-Fetch-Site` checks; referrer-policy side effects; ephemeral
+workspaces and path allow-lists; server-side rendering; GET form state; threaded request
+handling; read-only database connections; `LIKE` escaping; content security policy; CSV
+formula injection; and the difference between "valid" and "unusual".
 
 ## Next exercises (for the learner, not the pipeline)
 

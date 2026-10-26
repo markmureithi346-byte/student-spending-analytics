@@ -4,6 +4,53 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-10-26
+
+Turns the dashboard into an upload-and-analyze platform. A synthetic three-CSV bundle
+can now be validated, loaded into its own warehouse and explored without touching the
+committed sample warehouse.
+
+### Added
+
+- `POST /upload` and the `/upload` page: transactions, profiles and budgets CSVs, an
+  optional 80-character analysis name, downloadable sample files and a mandatory
+  synthetic-data confirmation.
+- `platform.py`, which validates multipart input, writes canonical copies, runs the
+  existing pipeline under a process-wide lock and publishes an isolated workspace with its
+  own inputs, SQLite database, HTML report and metadata.
+- A `303` redirect to `/?analysis=<analysis_id>`; the id is preserved by filters,
+  pagination, reset links, CSV export and the report, so every uploaded view is
+  bookmarkable.
+- A recent-analyses list with status, accepted rows, report link and dataset name.
+- A quality-alert banner for analyses whose pipeline exited with code `1`; partial
+  workspaces are removed after unrecoverable pipeline errors and the upload page
+  returns `422` with the reason.
+- Upload limits: 2 MB per file, 6 MB total, 50,000 data rows per file, 12 form parts,
+  UTF-8 `.csv` files with the exact required headers and at least one data row.
+- Origin and `Sec-Fetch-Site` checks, fixed on-disk filenames, strict analysis-id
+  validation and analysis-aware routing for the sample-file download endpoints.
+- Eleven upload-platform tests (92 total) and desktop/phone screenshots of the upload
+  page and an uploaded analysis.
+
+### Changed
+
+- `serve` now presents both the dashboard and the upload workspace; its CLI help text
+  describes both. Pipeline options and exit codes are unchanged.
+- The HTTP `Referrer-Policy` is now `same-origin` instead of `no-referrer`, so browsers
+  send a verifiable `Origin` header on uploads without leaking URLs cross-origin.
+- Release version is now `1.2.0`.
+- README, learning log and test counts document the platform, its limits and its
+  security model.
+
+### Fixed
+
+- Real browser uploads failed with `403`: under `Referrer-Policy: no-referrer`,
+  Chromium sends `Origin: null`, which the same-origin guard correctly rejected. The
+  policy change makes legitimate form posts pass while explicit null and cross-site
+  origins remain blocked.
+- Uploaded files and analysis workspaces are cleaned up when the pipeline cannot
+  produce a usable warehouse, instead of leaving partial directories behind.
+
 ## [1.1.0] - 2026-10-26
 
 Adds an interactive, read-only dashboard over the existing warehouse. The report and

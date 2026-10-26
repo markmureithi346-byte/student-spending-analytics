@@ -24,6 +24,21 @@ from pathlib import Path
 
 from . import config
 from .components import bar_chart, integer, money, share_cell, table
+from .platform import (
+    FILE_FIELDS,
+    MAX_CSV_ROWS,
+    MAX_FILE_BYTES,
+    MAX_REQUEST_BYTES,
+    MAX_TOTAL_BYTES,
+    MAX_TITLE_LENGTH,
+    AnalysisWorkspace,
+    PipelineFailure,
+    UploadError,
+    create_analysis,
+    list_analyses,
+    parse_upload,
+    workspace_for,
+)
 from .theme import BASE_CSS
 
 logger = logging.getLogger(__name__)
@@ -41,6 +56,11 @@ FLAG_CHOICES = {
 }
 SEARCH_LIMIT = 80
 MERCHANT_LIMIT = 8
+SAMPLE_FILES = {
+    "student_expenses.csv": config.DEFAULT_TRANSACTIONS_CSV,
+    "student_profiles.csv": config.DEFAULT_PROFILES_CSV,
+    "student_budgets.csv": config.DEFAULT_BUDGETS_CSV,
+}
 
 _DASH_CSS = """
 .dash-hero .hero-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 0 0 18px; }
@@ -106,7 +126,45 @@ _DASH_CSS = """
 .flag-link { font-size: 12.5px; font-weight: 700; color: var(--accent); }
 .error-page { margin-top: 60px; }
 .error-page p { color: var(--muted); }
+.upload-grid { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(280px, 1fr);
+  gap: 18px; margin-top: 18px; align-items: start; }
+.upload-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 16px; margin-top: 14px; }
+.upload-form .field-full { grid-column: 1 / -1; }
+.upload-form input[type="file"] { padding: 10px; background: #fbf8ff; }
+.upload-form input[type="file"]::file-selector-button {
+  margin-right: 10px; padding: 6px 11px; border: 1px solid #ddcff2; border-radius: 999px;
+  background: #fff; color: #5b21b6; font: inherit; font-size: 12.5px; font-weight: 700;
+  cursor: pointer; }
+.upload-form .columns { margin: 0; color: var(--muted); font-size: 11.5px;
+  line-height: 1.45; overflow-wrap: anywhere; }
+.upload-form .check-field { grid-column: 1 / -1; display: flex; gap: 10px;
+  align-items: flex-start; padding: 12px 14px; border: 1px solid #ddcff2;
+  border-radius: 12px; background: #fbf8ff; font-size: 13px; color: #4c3a66; }
+.upload-form .check-field input { width: 18px; height: 18px; margin: 2px 0 0;
+  flex: 0 0 auto; accent-color: var(--accent); }
+.upload-form .actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap;
+  gap: 10px; align-items: center; }
+.upload-note { grid-column: 1 / -1; margin: 0; color: var(--muted); font-size: 12px; }
+.sample-links { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center;
+  margin: 2px 0 0; font-size: 12.5px; }
+.sample-links a { color: var(--accent); font-weight: 700; }
+.recent-list { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 10px; }
+.recent-list li { padding: 12px 14px; border: 1px solid var(--line);
+  border-radius: 12px; background: #fbf8ff; }
+.recent-main { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
+.recent-main strong { word-break: break-word; }
+.recent-meta { margin: 3px 0 0; color: var(--muted); font-size: 12px; }
+.recent-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  margin-top: 9px; }
+.recent-empty { margin: 14px 0 0; padding: 14px; border: 1px dashed #d8c4f7;
+  border-radius: 12px; background: #fbf8ff; color: #4c3a66; font-size: 13.5px; }
+.upload-steps { margin: 14px 0 0; padding-left: 20px; color: var(--muted);
+  font-size: 13px; }
+.upload-steps li { margin-bottom: 6px; }
+.upload-steps strong { color: var(--ink); }
 @media (max-width: 900px) {
+  .upload-grid { grid-template-columns: 1fr; }
   .filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .field-search { grid-column: span 2; }
   .filters .actions { grid-column: span 2; }
@@ -114,6 +172,11 @@ _DASH_CSS = """
   .split { grid-template-columns: 1fr; }
 }
 @media (max-width: 640px) {
+  .upload-form { grid-template-columns: 1fr; }
+  .upload-form .field-full { grid-column: auto; }
+  .upload-form .check-field { grid-column: auto; }
+  .upload-form .actions { grid-column: auto; }
+  .upload-note { grid-column: auto; }
   .filters { grid-template-columns: 1fr; }
   .field-search { grid-column: auto; }
   .filters .actions { grid-column: auto; }
@@ -154,6 +217,7 @@ class Filters:
     sort: str = "newest"
     per_page: int = 25
     page: int = 1
+    analysis: str = ""
 
     @property
     def anomalies_only(self) -> bool:
@@ -161,6 +225,8 @@ class Filters:
 
     def to_query(self, page: int | None = None) -> dict[str, str]:
         query = {"from": self.date_from, "to": self.date_to}
+        if self.analysis:
+            query["analysis"] = self.analysis
         if self.student_id:
             query["student"] = self.student_id
         if self.category:
@@ -231,16 +297,27 @@ def escape_attr(value: object) -> str:
     return html.escape("" if value is None else str(value), quote=True)
 
 
-def _document(title: str, body: str) -> str:
+def _document(
+    title: str,
+    body: str,
+    *,
+    skip_href: str | None = "#summary",
+    skip_label: str = "Skip to results",
+) -> str:
+    skip = (
+        f'<a class="skip" href="{escape_attr(skip_href)}">{escape_attr(skip_label)}</a>\n'
+        if skip_href
+        else ""
+    )
     return (
         "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n"
         "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
         f"<title>{escape_attr(title)}</title>\n"
-        "<meta name=\"description\" content=\"Interactive, read-only explorer for the "
-        "synthetic student spending warehouse.\">\n"
+        "<meta name=\"description\" content=\"Interactive analysis workspace for the "
+        "synthetic student spending pipeline.\">\n"
         "<link rel=\"icon\" href=\"data:,\">\n"
         f"<style>{BASE_CSS}{_DASH_CSS}</style>\n</head>\n<body>\n"
-        '<a class="skip" href="#summary">Skip to results</a>\n'
+        f"{skip}"
         '<div class="scene" aria-hidden="true">'
         '<span class="orb orb-a"></span><span class="orb orb-b"></span>'
         '<span class="orb orb-c"></span></div>\n'
@@ -259,7 +336,7 @@ def _error_document(title: str, message: str, *, action_href: str = "/") -> str:
   </section>
 </main>
 """
-    return _document(f"{title} · Student Spending", body)
+    return _document(f"{title} · Student Spending", body, skip_href=None)
 
 
 def load_options(connection: sqlite3.Connection) -> FilterOptions:
@@ -560,6 +637,19 @@ def _export_href(filters: Filters) -> str:
     return escape_attr(f"/export.csv?{urllib.parse.urlencode(query)}")
 
 
+def _dataset_href(filters: Filters, path: str = "/") -> str:
+    if not filters.analysis:
+        return escape_attr(path)
+    query = urllib.parse.urlencode({"analysis": filters.analysis})
+    return escape_attr(f"{path}?{query}")
+
+
+def _analysis_suffix(analysis: AnalysisWorkspace | None) -> str:
+    if analysis is None:
+        return ""
+    return "?" + urllib.parse.urlencode({"analysis": analysis.analysis_id})
+
+
 def _kpi_cards(kpis: dict) -> str:
     flagged = int(kpis["flagged_count"])
     cards = [
@@ -635,6 +725,7 @@ def _filter_panel(
       can narrow to one student, one category and a date window at the same time.</p>
     {error_html}
     <form class="filters" method="get" action="/#summary" aria-labelledby="filters-title">
+      {'<input type="hidden" name="analysis" value="' + escape_attr(filters.analysis) + '">' if filters.analysis else ''}
       <div class="field">
         <label for="from">Start date</label>
         <input id="from" name="from" type="date" value="{escape_attr(filters.date_from)}"{date_limits} required>
@@ -657,10 +748,10 @@ def _filter_panel(
       </div>
       <div class="actions">
         <button class="button primary" type="submit">Apply filters</button>
-        <a class="button ghost" href="/">Reset everything</a>
+        <a class="button ghost" href="{_dataset_href(filters)}">Reset everything</a>
       </div>
-      <p class="note">The dashboard reads the warehouse in read-only mode. Nothing you
-        type is stored, and a new pipeline run is picked up on the next page load.</p>
+      <p class="note">The dashboard reads this warehouse in read-only mode. Filter values
+        are not stored; uploaded datasets stay on this machine.</p>
     </form>
   </section>"""
 
@@ -694,7 +785,7 @@ def _active_filter_list(filters: Filters, options: FilterOptions) -> str:
     chips = "".join(f"<li>{escape_attr(item)}</li>" for item in items)
     return (
         f'<ul class="active-filters" aria-label="Active filters">{chips}'
-        '<li><a class="clear" href="/">Clear all</a></li></ul>'
+        f'<li><a class="clear" href="{_dataset_href(filters)}">Clear all</a></li></ul>'
     )
 
 
@@ -746,7 +837,7 @@ def _summary_panel(
     <p class="lead">{escape_attr(_summary_sentence(kpis))}</p>
     <p class="empty"><strong>Try a wider view.</strong> Extend the date range, choose all
       categories, or clear the search text. The warehouse stays unchanged.</p>
-    <p><a class="button primary" href="/">Reset the filters</a></p>
+    <p><a class="button primary" href="{_dataset_href(filters)}">Reset the filters</a></p>
     {active}
   </section>"""
 
@@ -937,25 +1028,40 @@ def _nav(has_results: bool) -> str:
     return f'<nav class="toc" aria-label="Dashboard sections">{anchors}</nav>'
 
 
-def _hero(run: dict, options: FilterOptions, transactions: int, report_available: bool) -> str:
+def _hero(
+    run: dict,
+    options: FilterOptions,
+    transactions: int,
+    report_available: bool,
+    analysis: AnalysisWorkspace | None,
+) -> str:
     status = str(run.get("status", "unknown"))
     dot_class = "status-dot" if status == "success" else "status-dot bad"
     report_link = (
-        '<a class="button ghost" href="/report">Open the full report</a>'
+        f'<a class="button ghost" href="/report{_analysis_suffix(analysis)}">'
+        "Open the full report</a>"
         if report_available
         else ""
     )
+    analysis_chip = (
+        f'<li><span class="chip-key">Analysis</span>{escape_attr(analysis.title)}</li>'
+        if analysis
+        else ""
+    )
+    scope = "this analysis" if analysis else "the warehouse"
     return f"""
   <header class="hero dash-hero" id="top">
-    <p class="eyebrow">Synthetic data &middot; interactive explorer</p>
+    <p class="eyebrow">Synthetic data &middot; analysis workspace</p>
     <h1>Spending <span>Explorer</span></h1>
-    <p class="lede">Filter every clean transaction in the warehouse and see the summary,
+    <p class="lede">Filter every clean transaction in {scope} and see the summary,
       monthly trend and breakdown update together. Every figure is a SQL result.</p>
     <div class="hero-actions">
       <a class="button primary" href="#filters">Start filtering</a>
       {report_link}
+      <a class="button ghost" href="/upload">Analyze new data</a>
     </div>
     <ul class="chips">
+      {analysis_chip}
       <li><span class="chip-key">Data through</span>{escape_attr(options.last_date or "n/a")}</li>
       <li><span class="chip-key">Warehouse</span>{integer(transactions)} clean
         {("row" if int(transactions) == 1 else "rows")}</li>
@@ -968,22 +1074,52 @@ def _hero(run: dict, options: FilterOptions, transactions: int, report_available
   </header>"""
 
 
-def _footer(run: dict, report_available: bool) -> str:
+def _analysis_notice(analysis: AnalysisWorkspace | None, report_available: bool) -> str:
+    if analysis is None or not analysis.quality_failures:
+        return ""
+    report_link = (
+        f' <a href="/report{_analysis_suffix(analysis)}">Open the full report</a>.'
+        if report_available
+        else "."
+    )
+    checks = _plural(analysis.quality_failures, "automated quality check")
+    return (
+        '<div class="banner bad" role="status"><strong>Quality alert.</strong> '
+        f"{checks} failed while building this analysis. The rows are still visible;"
+        f" review the evidence before relying on the totals{report_link}</div>"
+    )
+
+
+def _footer(
+    run: dict,
+    report_available: bool,
+    analysis: AnalysisWorkspace | None,
+) -> str:
     report_note = (
-        '<a class="totop" href="/report">Open the full static report</a>'
+        f'<a class="totop" href="/report{_analysis_suffix(analysis)}">'
+        "Open the full static report</a>"
         if report_available
         else '<span class="section-note">Run <code>student-spending</code> to generate '
              "the full static report.</span>"
+    )
+    dataset_note = (
+        f"This dashboard is showing the uploaded analysis "
+        f"<strong>{escape_attr(analysis.title)}</strong> "
+        f"(<code>{escape_attr(analysis.analysis_id)}</code>)."
+        if analysis
+        else "This dashboard is showing the committed synthetic warehouse."
     )
     return f"""
   <footer class="panel footer">
     <p><strong>Read-only by design.</strong> Filters are validated, every value reaches
       SQLite as a bound parameter, and the warehouse is opened with <code>mode=ro</code>.
-      Nothing you type is written or stored.</p>
+      Filter values are not written or stored.</p>
+    <p class="section-note">{dataset_note}</p>
     <p class="meta-line">Student Spending Analytics &middot; latest run
       <code>{escape_attr(run.get("run_id", "none"))}</code> &middot; finished
       <code>{escape_attr(run.get("finished_at") or "not finished")}</code></p>
     <div class="footer-links">{report_note}
+      <a class="totop" href="/upload">Analyze another dataset</a>
       <a class="totop" href="#top">Back to top</a></div>
   </footer>"""
 
@@ -993,26 +1129,33 @@ def render_dashboard(
     query: dict[str, list[str]],
     *,
     report_available: bool,
+    analysis: AnalysisWorkspace | None = None,
 ) -> str:
     options = load_options(connection)
     filters, errors = parse_filters(query, options)
+    if analysis is not None:
+        filters = replace(filters, analysis=analysis.analysis_id)
     data = load_dashboard(connection, filters)
     run = load_run(connection)
     total_warehouse = connection.execute("SELECT COUNT(*) FROM transactions").fetchone()[0]
     has_results = int(data.kpis["transaction_count"]) > 0
     body = f"""
 <main class="shell">
-  {_hero(run, options, int(total_warehouse), report_available)}
+  {_hero(run, options, int(total_warehouse), report_available, analysis)}
+  {_analysis_notice(analysis, report_available)}
   {_nav(has_results)}
   {_filter_panel(filters, options, errors)}
   {_summary_panel(filters, options, data)}
   {_transactions_panel(filters, data) if has_results else ""}
   {_trend_panel(data) if has_results else ""}
   {_breakdown_panel(data) if has_results else ""}
-  {_footer(run, report_available)}
+  {_footer(run, report_available, analysis)}
 </main>
 """
-    return _document("Spending Explorer · Student Spending Analytics", body)
+    page_title = (
+        f"{analysis.title} · Spending Explorer" if analysis else "Spending Explorer"
+    )
+    return _document(f"{page_title} · Student Spending Analytics", body)
 
 
 def _csv_safe(value: object) -> str:
@@ -1061,6 +1204,179 @@ def render_csv(connection: sqlite3.Connection, filters: Filters) -> str:
     return buffer.getvalue()
 
 
+def _upload_errors(errors: list[str]) -> str:
+    if not errors:
+        return ""
+    items = " ".join(f"<span>{escape_attr(error)}</span>" for error in errors)
+    return f'<div class="banner bad" role="alert"><strong>Check the upload.</strong>{items}</div>'
+
+
+def _file_field(field: str, *, full: bool = False) -> str:
+    label, columns, _ = FILE_FIELDS[field]
+    required = ", ".join(columns)
+    return f"""
+      <div class="field{' field-full' if full else ''}">
+        <label for="{escape_attr(field)}">{escape_attr(label)} <span class="section-note">required</span></label>
+        <input id="{escape_attr(field)}" name="{escape_attr(field)}" type="file"
+          accept=".csv,text/csv" required>
+        <p class="columns">Required columns: {escape_attr(required)}</p>
+      </div>"""
+
+
+def _format_created(created_at: str) -> str:
+    text = created_at.strip()
+    if len(text) >= 16 and text[10] == "T":
+        return text[:16].replace("T", " ") + " UTC"
+    return text or "unknown time"
+
+
+def _recent_analyses(analyses: list[AnalysisWorkspace]) -> str:
+    if not analyses:
+        return (
+            '<p class="recent-empty">No uploaded analyses yet. The committed sample '
+            "warehouse is still available from the dashboard.</p>"
+        )
+    items = []
+    for analysis in analyses:
+        if analysis.status == "quality_failed":
+            status = '<span class="pill fail">quality alert</span>'
+        else:
+            status = '<span class="pill pass">success</span>'
+        report_link = (
+            f'<a class="button ghost small" href="/report{_analysis_suffix(analysis)}">'
+            "Report</a>"
+            if analysis.report_path.is_file()
+            else ""
+        )
+        source = analysis.inputs.get("transactions", {})
+        source_name = source.get("filename") if isinstance(source, dict) else ""
+        source_rows = source.get("rows") if isinstance(source, dict) else ""
+        source_note = ""
+        if source_name:
+            source_note = (
+                f'<span class="section-note">{escape_attr(source_name)}'
+                f' · {integer(source_rows)} rows</span>'
+            )
+        items.append(
+            f"""
+      <li>
+        <div class="recent-main"><strong>{escape_attr(analysis.title)}</strong>{status}</div>
+        <p class="recent-meta"><code>{escape_attr(analysis.analysis_id)}</code>
+          · {escape_attr(_format_created(analysis.created_at))}
+          · {integer(analysis.rows_accepted)} accepted rows</p>
+        <div class="recent-actions">
+          <a class="button primary small" href="/{_analysis_suffix(analysis)}">Open analysis</a>
+          {report_link}{source_note}
+        </div>
+      </li>"""
+        )
+    return f'<ul class="recent-list">{"".join(items)}</ul>'
+
+
+def render_upload_page(
+    *,
+    analyses: list[AnalysisWorkspace],
+    errors: list[str] | None = None,
+    title: str = "",
+    current_analysis: AnalysisWorkspace | None = None,
+) -> str:
+    back_link = (
+        f'<a class="button ghost" href="/{_analysis_suffix(current_analysis)}">'
+        "Open current analysis</a>"
+        if current_analysis
+        else '<a class="button ghost" href="/">Open the sample dashboard</a>'
+    )
+    file_bytes = MAX_FILE_BYTES // (1024 * 1024)
+    total_bytes = MAX_TOTAL_BYTES // (1024 * 1024)
+    body = f"""
+<main class="shell">
+  <header class="hero dash-hero" id="top">
+    <p class="eyebrow">Synthetic data &middot; build an analysis</p>
+    <h1>Analyze <span>your data</span></h1>
+    <p class="lede">Upload three CSVs and the pipeline validates every row, loads an
+      isolated warehouse and opens the same filterable dashboard. Nothing is uploaded
+      to a remote service.</p>
+    <div class="hero-actions">
+      <a class="button primary" href="#upload-form">Upload files</a>
+      {back_link}
+    </div>
+    <p class="disclaimer"><strong>Synthetic data only.</strong> Do not upload real
+      student, account, card or payment information. Every analysis is built for a
+      learning exercise.</p>
+  </header>
+
+  <nav class="toc" aria-label="Analysis workspace sections">
+    <a href="#upload-form">Upload</a><a href="#recent">Recent analyses</a>
+  </nav>
+
+  <div class="upload-grid">
+    <section class="panel" id="upload-form" aria-labelledby="upload-title">
+      <p class="eyebrow">New analysis</p>
+      <h2 id="upload-title">Three CSVs, one analysed warehouse</h2>
+      <p class="lead">The transactions file is the fact table. Profiles define the
+        students and budgets make the budget comparison meaningful. Download the sample
+        files below if you want a known-good starting point.</p>
+      {_upload_errors(errors or [])}
+      <form class="upload-form" method="post" action="/upload" enctype="multipart/form-data">
+        <div class="field field-full">
+          <label for="analysis-title">Analysis name <span class="section-note">optional</span></label>
+          <input id="analysis-title" name="title" type="text" maxlength="{MAX_TITLE_LENGTH}"
+            value="{escape_attr(title)}" placeholder="e.g. October test budget"
+            autocomplete="off">
+        </div>
+        {_file_field("transactions", full=True)}
+        {_file_field("profiles")}
+        {_file_field("budgets")}
+        <div class="field-full sample-links">
+          <span>Sample inputs:</span>
+          <a href="/samples/student_expenses.csv" download>transactions</a>
+          <a href="/samples/student_profiles.csv" download>profiles</a>
+          <a href="/samples/student_budgets.csv" download>budgets</a>
+        </div>
+        <label class="check-field">
+          <input type="checkbox" name="synthetic" value="yes" required>
+          <span><strong>I confirm these files are synthetic.</strong> They contain no real
+            student, account, card or payment details.</span>
+        </label>
+        <div class="actions">
+          <button class="button primary" type="submit">Run analysis</button>
+          <span class="section-note">The pipeline runs immediately; this may take a moment.</span>
+        </div>
+        <p class="upload-note">Limits: {file_bytes} MB per file, {total_bytes} MB total,
+          {MAX_CSV_ROWS:,} data rows per file. Files are saved locally under
+          <code>data/uploads/</code>; each analysis gets its own database and report.</p>
+      </form>
+    </section>
+
+    <aside class="panel" id="recent" aria-labelledby="recent-title">
+      <p class="eyebrow">History</p>
+      <h2 id="recent-title">Recent analyses</h2>
+      <p class="lead">Only analyses that completed loading appear here. Each one keeps
+        its inputs, SQLite warehouse and report on this machine.</p>
+      {_recent_analyses(analyses)}
+      <ol class="upload-steps">
+        <li><strong>Check</strong> the headers, encoding, row count and size.</li>
+        <li><strong>Build</strong> the warehouse with the normal pipeline.</li>
+        <li><strong>Explore</strong> the dashboard, CSV export and quality report.</li>
+      </ol>
+    </aside>
+  </div>
+
+  <footer class="panel footer">
+    <p><strong>Local and read-only after loading.</strong> The upload endpoint is the only
+      write path; analysis pages open SQLite with <code>mode=ro</code>. There is no login,
+      so keep the server on loopback.</p>
+    <p class="meta-line">Student Spending Analytics &middot; synthetic data only</p>
+    <div class="footer-links">
+      <a class="totop" href="/">Open the sample dashboard</a>
+      <a class="totop" href="#top">Back to top</a>
+    </div>
+  </footer>
+</main>
+"""
+    return _document("Analyze data · Student Spending Analytics", body, skip_href=None)
+
+
 def connect_readonly(db_path: Path) -> sqlite3.Connection:
     """Open the warehouse so a bug in a handler cannot modify it."""
     uri = db_path.resolve().as_uri() + "?mode=ro"
@@ -1082,7 +1398,7 @@ class DashboardServer(ThreadingHTTPServer):
 
 class DashboardHandler(BaseHTTPRequestHandler):
     server: DashboardServer
-    server_version = "StudentSpendingDashboard/1.1"
+    server_version = "StudentSpendingDashboard/1.2"
     sys_version = ""
     timeout = 30
 
@@ -1096,7 +1412,23 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self._dispatch(head_only=True)
 
     def do_POST(self) -> None:  # noqa: N802 - required by http.server
-        self._method_not_allowed()
+        if urllib.parse.urlsplit(self.path).path == "/upload":
+            try:
+                self._create_analysis()
+            except Exception:  # noqa: BLE001 - one bad upload must not stop the server
+                logger.exception("unexpected upload failure")
+                self._safe_send(
+                    HTTPStatus.INTERNAL_SERVER_ERROR,
+                    _error_document(
+                        "The analysis could not be started",
+                        "An unexpected error interrupted the upload. Check the server "
+                        "log, then try again.",
+                        action_href="/upload",
+                    ),
+                    head_only=False,
+                )
+        else:
+            self._method_not_allowed()
 
     do_PUT = do_POST
     do_PATCH = do_POST
@@ -1124,7 +1456,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(payload)))
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
-        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("Referrer-Policy", "same-origin")
         self.send_header(
             "Content-Security-Policy",
             "default-src 'none'; style-src 'unsafe-inline'; img-src data:; "
@@ -1136,6 +1468,138 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if not head_only:
             self.wfile.write(payload)
 
+    def _upload_page(self, query: dict[str, list[str]], *, head_only: bool) -> None:
+        current = workspace_for(_first(query, "analysis"))
+        body = render_upload_page(
+            analyses=list_analyses(),
+            current_analysis=current,
+        )
+        self._send(HTTPStatus.OK, body, head_only=head_only)
+
+    def _create_analysis(self) -> None:
+        if not self._same_origin():
+            self._send(
+                HTTPStatus.FORBIDDEN,
+                _error_document(
+                    "Request blocked",
+                    "Uploads must come from this dashboard's own page.",
+                    action_href="/upload",
+                ),
+            )
+            return
+        title = ""
+        try:
+            body = self._read_upload_body()
+            content_type = self.headers.get("Content-Type", "")
+            bundle = parse_upload(content_type, body)
+            title = bundle.title
+            analysis = create_analysis(bundle)
+        except PipelineFailure as error:
+            logger.warning("analysis pipeline failed: %s", error)
+            self._upload_error(422, [str(error)], title=title)
+            return
+        except UploadError as error:
+            logger.info("upload rejected: %s", error)
+            if error.status in (411, 413):
+                self._send(
+                    error.status,
+                    _error_document(
+                        "Upload not accepted",
+                        str(error),
+                        action_href="/upload",
+                    ),
+                )
+            else:
+                self._upload_error(error.status, [str(error)])
+            return
+
+        location = "/?" + urllib.parse.urlencode({"analysis": analysis.analysis_id})
+        self._send(HTTPStatus.SEE_OTHER, "", headers=[("Location", location)])
+
+    def _upload_error(
+        self,
+        status: int,
+        errors: list[str],
+        *,
+        title: str = "",
+    ) -> None:
+        body = render_upload_page(
+            analyses=list_analyses(),
+            errors=errors,
+            title=title,
+        )
+        self._send(status, body)
+
+    def _read_upload_body(self) -> bytes:
+        raw_length = self.headers.get("Content-Length")
+        if raw_length is None:
+            raise UploadError(
+                "The browser did not send a Content-Length header.", status=411
+            )
+        try:
+            length = int(raw_length)
+        except ValueError:
+            raise UploadError("The upload length is not valid.") from None
+        if length <= 0:
+            raise UploadError("The upload was empty.")
+        if length > MAX_REQUEST_BYTES:
+            raise UploadError(
+                "The upload is larger than the allowed limit.", status=413
+            )
+        body = self.rfile.read(length)
+        if len(body) != length:
+            raise UploadError("The upload ended before all bytes arrived.")
+        return body
+
+    def _same_origin(self) -> bool:
+        if self.headers.get("Sec-Fetch-Site") == "cross-site":
+            return False
+        origin = self.headers.get("Origin")
+        if not origin:
+            return True
+        host = self.headers.get("Host", "")
+        if not host:
+            return False
+        parsed = urllib.parse.urlsplit(origin)
+        return (
+            parsed.scheme in {"http", "https"}
+            and parsed.netloc.lower() == host.lower()
+        )
+
+    def _requested_analysis(
+        self, query: dict[str, list[str]]
+    ) -> tuple[AnalysisWorkspace | None, str | None]:
+        requested = _first(query, "analysis")
+        if not requested:
+            return None, None
+        analysis = workspace_for(requested)
+        if analysis is None:
+            return None, (
+                "That analysis is not available. It may have been removed or may not "
+                "have finished loading."
+            )
+        return analysis, None
+
+    def _sample(self, path: str, *, head_only: bool) -> None:
+        name = path.removeprefix("/samples/")
+        source = SAMPLE_FILES.get(name)
+        if source is None or not source.is_file():
+            body = _error_document(
+                "Sample not found",
+                "That sample file is not part of this project.",
+                action_href="/upload",
+            )
+            self._send(HTTPStatus.NOT_FOUND, body, head_only=head_only)
+            return
+        text = source.read_text(encoding="utf-8")
+        self._send(
+            HTTPStatus.OK,
+            text,
+            headers=[("Content-Disposition", f'attachment; filename="{name}"')],
+            content_type="text/csv; charset=utf-8",
+            head_only=head_only,
+        )
+
     def _dispatch(self, *, head_only: bool) -> None:
         parsed = urllib.parse.urlsplit(self.path)
         path = parsed.path
@@ -1143,10 +1607,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
         try:
             if path == "/":
                 self._page(query, head_only=head_only)
+            elif path == "/upload":
+                self._upload_page(query, head_only=head_only)
             elif path == "/export.csv":
                 self._export(query, head_only=head_only)
             elif path == "/report":
-                self._report(head_only=head_only)
+                self._report(query, head_only=head_only)
+            elif path.startswith("/samples/"):
+                self._sample(path, head_only=head_only)
             elif path == "/favicon.ico":
                 self._no_content()
             else:
@@ -1180,29 +1648,50 @@ class DashboardHandler(BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError):
             logger.debug("client disconnected before the error response finished")
 
-    def _open(self) -> sqlite3.Connection:
-        return connect_readonly(self.server.db_path)
+    def _open(self, db_path: Path | None = None) -> sqlite3.Connection:
+        return connect_readonly(db_path or self.server.db_path)
 
     def _page(self, query: dict[str, list[str]], *, head_only: bool) -> None:
-        connection = self._open()
+        analysis, error = self._requested_analysis(query)
+        if error:
+            self._send(
+                HTTPStatus.NOT_FOUND,
+                _error_document("Analysis not found", error, action_href="/upload"),
+                head_only=head_only,
+            )
+            return
+        db_path = analysis.db_path if analysis else self.server.db_path
+        report_path = analysis.report_path if analysis else self.server.report_path
+        connection = self._open(db_path)
         try:
             body = render_dashboard(
                 connection,
                 query,
-                report_available=self.server.report_path.is_file(),
+                report_available=report_path.is_file(),
+                analysis=analysis,
             )
         finally:
             connection.close()
         self._send(HTTPStatus.OK, body, head_only=head_only)
 
     def _export(self, query: dict[str, list[str]], *, head_only: bool) -> None:
-        connection = self._open()
+        analysis, error = self._requested_analysis(query)
+        if error:
+            self._send(
+                HTTPStatus.NOT_FOUND,
+                _error_document("Analysis not found", error, action_href="/upload"),
+                head_only=head_only,
+            )
+            return
+        db_path = analysis.db_path if analysis else self.server.db_path
+        connection = self._open(db_path)
         try:
             filters, errors = parse_filters(query, load_options(connection))
             if errors:
                 body = _error_document(
                     "Filters need attention",
                     " ".join(errors) + " Adjust the filters on the dashboard first.",
+                    action_href="/" + _analysis_suffix(analysis),
                 )
                 self._send(HTTPStatus.BAD_REQUEST, body, head_only=head_only)
                 return
@@ -1220,15 +1709,27 @@ class DashboardHandler(BaseHTTPRequestHandler):
             head_only=head_only,
         )
 
-    def _report(self, *, head_only: bool) -> None:
-        if not self.server.report_path.is_file():
+    def _report(
+        self, query: dict[str, list[str]], *, head_only: bool
+    ) -> None:
+        analysis, error = self._requested_analysis(query)
+        if error:
+            self._send(
+                HTTPStatus.NOT_FOUND,
+                _error_document("Analysis not found", error, action_href="/upload"),
+                head_only=head_only,
+            )
+            return
+        report_path = analysis.report_path if analysis else self.server.report_path
+        if not report_path.is_file():
             body = _error_document(
                 "No report yet",
                 "Run 'student-spending' to build the static report, then reload this page.",
+                action_href="/" + _analysis_suffix(analysis),
             )
             self._send(HTTPStatus.NOT_FOUND, body, head_only=head_only)
             return
-        report_text = self.server.report_path.read_text(encoding="utf-8")
+        report_text = report_path.read_text(encoding="utf-8")
         self._send(HTTPStatus.OK, report_text, head_only=head_only)
 
 

@@ -22,10 +22,13 @@ def _locate_project_root() -> Path:
 PROJECT_ROOT = _locate_project_root()
 
 RAW_DATA_DIR = PROJECT_ROOT / "data" / "raw"
+UPLOAD_DATA_DIR = PROJECT_ROOT / "data" / "uploads"
 PROCESSED_DATA_DIR = PROJECT_ROOT / "data" / "processed"
 QUARANTINE_DIR = PROJECT_ROOT / "data" / "quarantine"
 WAREHOUSE_DIR = PROJECT_ROOT / "warehouse"
+UPLOAD_WAREHOUSE_DIR = WAREHOUSE_DIR / "uploads"
 REPORTS_DIR = PROJECT_ROOT / "reports"
+UPLOAD_REPORT_DIR = REPORTS_DIR / "uploads"
 LOG_DIR = PROJECT_ROOT / "logs"
 SCHEMA_PATH = PROJECT_ROOT / "sql" / "schema.sql"
 

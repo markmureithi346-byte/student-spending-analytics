@@ -240,9 +240,10 @@ def build_parser() -> argparse.ArgumentParser:
     commands = parser.add_subparsers(dest="command", metavar="command")
     serve_parser = commands.add_parser(
         "serve",
-        help="start the interactive read-only dashboard",
-        description="Serve the filtered dashboard on the local machine. The warehouse "
-        "is opened read-only and no input is stored.",
+        help="start the interactive dashboard and upload workspace",
+        description="Serve the dashboard and upload workspace on the local machine. "
+        "Existing warehouses are opened read-only; uploaded bundles are stored under "
+        "data/uploads/ and analysed in isolation.",
     )
     serve_parser.add_argument(
         "--db",

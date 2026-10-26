@@ -19,6 +19,7 @@ warehouse/
 # Pipeline outputs and runtime artefacts
 data/processed/
 data/quarantine/
+data/uploads/
 reports/
 logs/
 
