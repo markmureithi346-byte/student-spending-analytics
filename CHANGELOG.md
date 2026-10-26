@@ -4,6 +4,22 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.2] - 2026-10-26
+
+Turns the add-row control into a compact **+** button beside the Categories heading and
+raises the category limit from 24 to 100, so a student can build the category list their
+budget actually needs.
+
+### Changed
+
+- The **+** button sits next to the Categories heading, with an accessible label and a
+  tooltip. It adds one row per click, keeps every typed value, and still saves nothing
+  until **Run my analysis** is selected.
+- Category rows can grow from 12 to 100 (previously 24). The row counter now reads
+  "12 of 100 category rows"; at the limit the button is replaced by a maximum note.
+- The form field cap rises from 250 to 600 so a 100-category plan parses, and the release
+  version is now `1.4.2`. One new test brings the suite to 131.
+
 ## [1.4.1] - 2026-10-26
 
 Adds an **+ Add another category** control to the money-plan form. It works without

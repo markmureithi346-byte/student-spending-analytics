@@ -1112,7 +1112,8 @@ class MoneyPlanTests(unittest.TestCase):
         self.assertGreater(int(headers["Content-Length"]), 0)
         self.assertIn('name="category_rows" value="12"', page)
         self.assertIn('name="spending_rows" value="24"', page)
-        self.assertIn("+ Add another category", page)
+        self.assertIn('aria-label="Add another category"', page)
+        self.assertIn("12 of 100 category rows", page)
 
     def test_add_category_keeps_typed_values_without_saving(self) -> None:
         fields = self.plan_fields()
@@ -1130,7 +1131,7 @@ class MoneyPlanTests(unittest.TestCase):
         self.assertIn('name="category_rows" value="13"', page)
         self.assertIn('value="Amina"', page)
         self.assertIn('value="Rent"', page)
-        self.assertIn("13 of 24 category rows shown.", page)
+        self.assertIn("13 of 100 category rows", page)
         self.assertEqual(self.plan_files(), set())
 
     def test_extra_category_rows_are_saved(self) -> None:
@@ -1152,27 +1153,43 @@ class MoneyPlanTests(unittest.TestCase):
         self.assertEqual(len(payload["categories"]), 13)
         self.assertEqual(payload["categories"][-1]["name"], "Category 13")
 
+    def test_hundred_category_rows_can_be_saved(self) -> None:
+        categories = tuple(
+            (f"Category {number}", "0", "flexible") for number in range(1, 101)
+        )
+        fields = self.plan_fields(
+            categories=categories,
+            spendings=(("2026-10-01", "Category 1", "10", "Tea"),),
+        )
+        fields.extend([("category_rows", "100"), ("spending_rows", "24")])
+        plan_id = self.create_plan(fields)
+
+        path = Path(config.PLAN_DATA_DIR) / f"{plan_id}.json"
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual(len(payload["categories"]), 100)
+        self.assertEqual(payload["categories"][-1]["name"], "Category 100")
+
     def test_category_rows_stop_at_the_limit(self) -> None:
         fields = self.plan_fields()
         fields.extend(
             [
-                ("category_rows", "24"),
+                ("category_rows", "100"),
                 ("spending_rows", "24"),
                 ("action", "add_category"),
             ]
         )
         status, _, page = self.post_form(fields)
         self.assertEqual(status, 200)
-        self.assertIn('name="category_name_24"', page)
-        self.assertNotIn('name="category_name_25"', page)
-        self.assertIn("24 category rows is the maximum.", page)
-        self.assertNotIn("+ Add another category", page)
+        self.assertIn('name="category_name_100"', page)
+        self.assertNotIn('name="category_name_101"', page)
+        self.assertIn("100 category rows is the maximum.", page)
+        self.assertNotIn('aria-label="Add another category"', page)
 
         fields[-3] = ("category_rows", "999")
         status, _, page = self.post_form(fields)
         self.assertEqual(status, 200)
-        self.assertIn('name="category_name_24"', page)
-        self.assertNotIn('name="category_name_25"', page)
+        self.assertIn('name="category_name_100"', page)
+        self.assertNotIn('name="category_name_101"', page)
 
     def test_plan_submission_is_saved_and_bookmarkable(self) -> None:
         plan_id = self.create_plan()

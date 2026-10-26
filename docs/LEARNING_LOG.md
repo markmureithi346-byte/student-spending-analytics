@@ -23,7 +23,7 @@ useful to whoever maintains this project next — including future me.
 | 13. Interactive dashboard | done | `web.py`, `student-spending serve`, 20 dashboard tests, browser-checked at 1280 px and 390 px |
 | 14. Upload platform | done | `platform.py`, `/upload`, isolated workspaces, 11 upload tests, browser-checked upload and analysis |
 | 15. Single-file upload | done | one transactions CSV, derived students, budget variance skipped, 95 tests |
-| 16. Per-student money plan | done | `personal.py`, `/plan`, user-defined categories, add-row control, saved results, 35 plan tests (130 total), browser-checked at 1440 px and 390 px |
+| 16. Per-student money plan | done | `personal.py`, `/plan`, user-defined categories, add-row control, saved results, 37 plan tests (131 total), browser-checked at 1440 px and 390 px |
 
 ## Decisions worth remembering
 
@@ -126,11 +126,12 @@ useful to whoever maintains this project next — including future me.
   go?"; the grouped chart puts each category's plan next to its actual spend on a shared
   axis. Both are inline SVG with tooltips, and both use the same shortened labels so a
   long user-defined name does not collide with the value.
-- **Add-row is a draft round-trip, not a script.** **+ Add another category** submits the
-  current form to the server with `action=add_category`, and the page is re-rendered with
-  one more row and every draft value intact. It does not validate or save. This keeps the
-  no-JavaScript and strict-CSP constraints, at the cost of a page reload per added row;
-  hidden row counts make the added rows survive validation errors and final submission.
+- **Add-row is a draft round-trip, not a script.** The **+** button beside the Categories
+  heading submits the current form to the server with `action=add_category`, and the page
+  is re-rendered with one more row and every draft value intact. It does not validate or
+  save. This keeps the no-JavaScript and strict-CSP constraints, at the cost of a page
+  reload per added row; hidden row counts make the added rows survive validation errors
+  and final submission.
 
 ## Bugs hit during development
 

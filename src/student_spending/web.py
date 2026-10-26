@@ -205,9 +205,13 @@ _DASH_CSS = """
 .row-no { color: #9a8cb5; font-size: 11px; font-weight: 700;
   font-variant-numeric: tabular-nums; text-align: right; }
 .plan-section-note { margin: 8px 0 0; color: var(--muted); font-size: 12px; }
-.plan-add { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center;
-  margin: 10px 0 0; }
+.plan-title-row { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center;
+  justify-content: space-between; }
+.plan-add { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
 .plan-add .button { border-style: dashed; }
+.plan-add-button { width: 38px; height: 38px; padding: 0; font-size: 22px;
+  line-height: 1; }
+.plan-add-button span { transform: translateY(-1px); }
 .error-list { margin: 5px 0 0; padding-left: 18px; }
 .error-list li { margin: 2px 0; }
 .plan-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
@@ -1560,17 +1564,18 @@ def render_plan_page(
     if category_rows < MAX_CATEGORIES:
         add_category = (
             '<div class="plan-add">'
-            '<button class="button ghost small" type="submit" name="action" '
-            'value="add_category" formaction="/plan#categories" formnovalidate>'
-            "+ Add another category</button>"
             f'<span class="section-note">{category_rows} of {MAX_CATEGORIES} '
-            "category rows shown.</span>"
+            "category rows</span>"
+            '<button class="button ghost plan-add-button" type="submit" '
+            'name="action" value="add_category" formaction="/plan#categories" '
+            'formnovalidate aria-label="Add another category" '
+            'title="Add another category"><span aria-hidden="true">+</span></button>'
             "</div>"
         )
     else:
         add_category = (
-            f'<p class="plan-section-note">{MAX_CATEGORIES} category rows is the '
-            "maximum.</p>"
+            f'<span class="section-note">{MAX_CATEGORIES} category rows is the '
+            "maximum.</span>"
         )
     body = f"""
 <main class="shell">
@@ -1635,17 +1640,20 @@ def render_plan_page(
 
     <section class="panel" id="categories" aria-labelledby="categories-title">
       <p class="eyebrow"><span class="section-no">02</span> Categories</p>
-      <h2 id="categories-title">Name your own categories</h2>
+      <div class="plan-title-row">
+        <h2 id="categories-title">Name your own categories</h2>
+        {add_category}
+      </div>
       <p class="lead">There is no fixed category list: use the names you think in.
         Add a planned amount if you have one, and mark each category Essential or
-        Flexible. Blank rows are ignored; at least two categories are needed.</p>
+        Flexible. Use + to add more rows. Blank rows are ignored; at least two
+        categories are needed.</p>
       <div class="plan-rows">
         <div class="plan-row-head cat-cols">
           <span>#</span><span>Category name</span><span>Planned KES</span><span>Type</span>
         </div>
         {categories_html}
       </div>
-      {add_category}
       <p class="plan-section-note">Leaving Planned KES blank means zero for that
         category. Spending in a category with a zero plan is still included, and the
         analysis marks it as having no plan.</p>
@@ -2114,7 +2122,7 @@ class DashboardServer(ThreadingHTTPServer):
 
 class DashboardHandler(BaseHTTPRequestHandler):
     server: DashboardServer
-    server_version = "StudentSpendingDashboard/1.4.1"
+    server_version = "StudentSpendingDashboard/1.4.2"
     sys_version = ""
     timeout = 30
 
