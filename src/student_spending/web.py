@@ -23,7 +23,16 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from . import config
-from .components import bar_chart, grouped_bar_chart, integer, money, percent, share_cell, table
+from .components import (
+    bar_chart,
+    display_share_pcts,
+    grouped_bar_chart,
+    integer,
+    money,
+    percent,
+    share_cell,
+    table,
+)
 from .personal import (
     BUDGET_METHODS,
     CATEGORY_ROWS,
@@ -92,20 +101,21 @@ _DASH_CSS = """
 .button.primary { background: linear-gradient(100deg, #7c3aed, #c026d3); color: #fff;
   box-shadow: 0 10px 20px -12px rgba(109, 40, 217, .8); }
 .button.primary:hover { transform: translateY(-1px); }
-.button.ghost { background: #fff; border-color: #ddcff2; color: #5b21b6; }
-.button.ghost:hover { background: #f7f0ff; }
+.button.ghost { background: rgba(255,255,255,.06); border-color: rgba(196,181,253,.3);
+  color: #e9d5ff; }
+.button.ghost:hover { background: rgba(255,255,255,.13); }
 .button.small { padding: 6px 12px; font-size: 12.5px; }
 .button.disabled { opacity: .45; cursor: not-allowed; pointer-events: none; }
 .filters { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 14px 16px; margin-top: 14px; }
 .field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
 .field label { font-size: 11.5px; font-weight: 700; text-transform: uppercase;
-  letter-spacing: .06em; color: #5b4a7a; }
-.field input, .field select { width: 100%; padding: 9px 11px; border: 1px solid #ddcff2;
-  border-radius: 10px; background: #fff; color: var(--ink); font: inherit;
+  letter-spacing: .06em; color: #cbb6ea; }
+.field input, .field select { width: 100%; padding: 9px 11px; border: 1px solid #4c2a78;
+  border-radius: 10px; background: #241041; color: var(--ink); font: inherit;
   font-size: 14px; }
-.field input:hover, .field select:hover { border-color: #c4a5ea; }
-.field input:focus, .field select:focus { outline: 3px solid rgba(124,58,237,.2);
+.field input:hover, .field select:hover { border-color: #6d3aa3; }
+.field input:focus, .field select:focus { outline: 3px solid rgba(192,132,252,.25);
   border-color: var(--accent); }
 .field-search { grid-column: span 2; }
 .filters .actions { grid-column: span 2; display: flex; flex-wrap: wrap; gap: 10px;
@@ -114,12 +124,12 @@ _DASH_CSS = """
 .dash-cards { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .resultbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
   gap: 10px 16px; margin: 16px 0 0; padding: 12px 14px; border: 1px solid var(--line);
-  border-radius: 14px; background: #fbf8ff; }
-.resultbar p { margin: 0; font-size: 13px; color: #4c3a66; }
+  border-radius: 14px; background: rgba(124,58,237,.12); }
+.resultbar p { margin: 0; font-size: 13px; color: #d8c8ef; }
 .resultbar .button { flex: 0 0 auto; }
 .active-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
   margin: 10px 0 0; padding: 0; list-style: none; }
-.active-filters li { font-size: 12px; background: #f3edfb; color: #5b21b6;
+.active-filters li { font-size: 12px; background: rgba(124,58,237,.24); color: #e9d5ff;
   padding: 3px 9px; border-radius: 999px; }
 .active-filters .clear { background: transparent; color: var(--danger); font-weight: 700;
   text-decoration: none; padding: 3px 4px; }
@@ -137,8 +147,8 @@ _DASH_CSS = """
 .split th, .split td { padding: 8px 10px; }
 .flag-note { margin: 10px 0 0; }
 .footer-links { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; margin-top: 4px; }
-.empty { margin: 10px 0 0; padding: 16px; border: 1px dashed #d8c4f7;
-  border-radius: 14px; background: #fbf8ff; color: #4c3a66; }
+.empty { margin: 10px 0 0; padding: 16px; border: 1px dashed rgba(196,181,253,.35);
+  border-radius: 14px; background: rgba(124,58,237,.1); color: var(--muted); }
 .empty strong { color: var(--ink); }
 .flag-link { font-size: 12.5px; font-weight: 700; color: var(--accent); }
 .error-page { margin-top: 60px; }
@@ -148,16 +158,18 @@ _DASH_CSS = """
 .upload-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px 16px; margin-top: 14px; }
 .upload-form .field-full { grid-column: 1 / -1; }
-.upload-form input[type="file"] { padding: 10px; background: #fbf8ff; }
+.upload-form input[type="file"] { padding: 10px; background: rgba(124,58,237,.1); }
 .upload-form input[type="file"]::file-selector-button {
-  margin-right: 10px; padding: 6px 11px; border: 1px solid #ddcff2; border-radius: 999px;
-  background: #fff; color: #5b21b6; font: inherit; font-size: 12.5px; font-weight: 700;
-  cursor: pointer; }
+  margin-right: 10px; padding: 6px 11px; border: 1px solid rgba(196,181,253,.3);
+  border-radius: 999px; background: rgba(255,255,255,.08); color: #e9d5ff;
+  font: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; }
 .upload-form .columns { margin: 0; color: var(--muted); font-size: 11.5px;
   line-height: 1.45; overflow-wrap: anywhere; }
 .upload-form .check-field, .plan-form .check-field { grid-column: 1 / -1; display: flex;
-  gap: 10px; align-items: flex-start; padding: 12px 14px; border: 1px solid #ddcff2;
-  border-radius: 12px; background: #fbf8ff; font-size: 13px; color: #4c3a66; }
+  gap: 10px; align-items: flex-start; padding: 12px 14px;
+  border: 1px solid rgba(196,181,253,.26);
+  border-radius: 12px; background: rgba(124,58,237,.12); font-size: 13px;
+  color: #ddd0f2; }
 .upload-form .check-field input, .plan-form .check-field input { width: 18px;
   height: 18px; margin: 2px 0 0; flex: 0 0 auto; accent-color: var(--accent); }
 .upload-form .actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap;
@@ -168,14 +180,15 @@ _DASH_CSS = """
 .sample-links a { color: var(--accent); font-weight: 700; }
 .recent-list { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 10px; }
 .recent-list li { padding: 12px 14px; border: 1px solid var(--line);
-  border-radius: 12px; background: #fbf8ff; }
+  border-radius: 12px; background: rgba(124,58,237,.1); }
 .recent-main { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
 .recent-main strong { word-break: break-word; }
 .recent-meta { margin: 3px 0 0; color: var(--muted); font-size: 12px; }
 .recent-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
   margin-top: 9px; }
-.recent-empty { margin: 14px 0 0; padding: 14px; border: 1px dashed #d8c4f7;
-  border-radius: 12px; background: #fbf8ff; color: #4c3a66; font-size: 13.5px; }
+.recent-empty { margin: 14px 0 0; padding: 14px;
+  border: 1px dashed rgba(196,181,253,.35); border-radius: 12px;
+  background: rgba(124,58,237,.1); color: var(--muted); font-size: 13.5px; }
 .upload-steps { margin: 14px 0 0; padding-left: 20px; color: var(--muted);
   font-size: 13px; }
 .upload-steps li { margin-bottom: 6px; }
@@ -184,23 +197,23 @@ _DASH_CSS = """
   gap: 14px 16px; margin-top: 14px; }
 .plan-grid .field-full { grid-column: 1 / -1; }
 .plan-form input, .plan-form select, .plan-form textarea { width: 100%;
-  padding: 9px 11px; border: 1px solid #ddcff2; border-radius: 10px;
-  background: #fff; color: var(--ink); font: inherit; font-size: 14px; }
+  padding: 9px 11px; border: 1px solid #4c2a78; border-radius: 10px;
+  background: #241041; color: var(--ink); font: inherit; font-size: 14px; }
 .plan-form input:hover, .plan-form select:hover, .plan-form textarea:hover {
-  border-color: #c4a5ea; }
+  border-color: #6d3aa3; }
 .plan-form input:focus, .plan-form select:focus, .plan-form textarea:focus {
-  outline: 3px solid rgba(124,58,237,.2); border-color: var(--accent); }
+  outline: 3px solid rgba(192,132,252,.25); border-color: var(--accent); }
 .plan-form textarea { min-height: 82px; resize: vertical; }
 .plan-rows { margin-top: 14px; }
 .plan-row-head, .plan-row { display: grid; gap: 8px; align-items: center; }
 .cat-cols { grid-template-columns: 30px minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr); }
 .spend-cols { grid-template-columns: 30px minmax(0, 1.1fr) minmax(0, 1.5fr)
   minmax(0, .9fr) minmax(0, 1.9fr); }
-.plan-row-head { padding: 0 2px 4px; color: #7a6a95; font-size: 10.5px;
+.plan-row-head { padding: 0 2px 4px; color: #b9a3d8; font-size: 10.5px;
   text-transform: uppercase; letter-spacing: .06em; font-weight: 800; }
 .plan-row { margin-bottom: 7px; }
 .plan-row input, .plan-row select { padding: 8px 9px; font-size: 13px; }
-.row-no { color: #9a8cb5; font-size: 11px; font-weight: 700;
+.row-no { color: #a28cc4; font-size: 11px; font-weight: 700;
   font-variant-numeric: tabular-nums; text-align: right; }
 .plan-section-note { margin: 8px 0 0; color: var(--muted); font-size: 12px; }
 .plan-title-row { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center;
@@ -218,18 +231,93 @@ _DASH_CSS = """
 .plan-meta { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 0 0 4px;
   color: var(--muted); font-size: 13px; }
 .plan-meta strong { color: var(--ink); }
-.method-note { margin: 10px 0 0; padding: 12px 14px; border-left: 3px solid #c4b5fd;
-  background: #fbf8ff; border-radius: 0 10px 10px 0; color: #4c3a66; font-size: 13.5px; }
-.insight-list { margin: 8px 0 0; padding-left: 20px; color: #3f2b5c; font-size: 14px; }
+.method-note { margin: 10px 0 0; padding: 12px 14px; border-left: 3px solid #a78bfa;
+  background: rgba(124,58,237,.12); border-radius: 0 10px 10px 0; color: #e4d8f7;
+  font-size: 13.5px; }
+.insight-list { margin: 8px 0 0; padding-left: 20px; color: #e4d8f7; font-size: 14px; }
 .insight-list li { margin-bottom: 7px; }
 .plan-tag { display: inline-block; margin-left: 7px; padding: 1px 7px;
-  border-radius: 999px; background: #f3edfb; color: #5b21b6; font-size: 10.5px;
-  font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
-.pill.warn { background: #fff7ed; color: #9a3412; }
-.pill.neutral { background: #f3edfb; color: #5b21b6; }
-.banner.note { background: #fbf8ff; border: 1px solid #e6d6fb; color: #4c3a66; }
+  border-radius: 999px; background: rgba(124,58,237,.24); color: #e9d5ff;
+  font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+.pill.warn { background: rgba(154,52,18,.28); color: #fdba74; }
+.pill.neutral { background: rgba(124,58,237,.22); color: #e9d5ff; }
+.banner.note { background: rgba(124,58,237,.12);
+  border: 1px solid rgba(196,181,253,.24); color: #ddd0f2; }
 .plan-split { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
   gap: 18px; align-items: start; }
+.receipt-wrap { position: relative; display: flex; justify-content: center;
+  margin: 18px 0 8px; padding: 8px; }
+.receipt { position: relative; width: min(100%, 430px); margin: 0;
+  padding: 26px 24px 20px; overflow: hidden; border-radius: 18px;
+  border: 1px solid rgba(216,180,254,.36); color: #f6ecff;
+  background:
+    radial-gradient(120% 80% at 15% 0%, rgba(217,70,239,.24), transparent 58%),
+    linear-gradient(163deg, #2a0f4d 0%, #1a0833 58%, #250b46 100%);
+  font-family: "Cascadia Mono", "Consolas", "SFMono-Regular", ui-monospace, monospace;
+  box-shadow: 0 26px 60px -28px rgba(168,85,247,.85),
+    0 0 46px rgba(192,132,252,.22), inset 0 1px 0 rgba(255,255,255,.09); }
+.receipt::before { content: ""; position: absolute; inset: -40% -60%; pointer-events: none;
+  background: linear-gradient(115deg, transparent 38%, rgba(255,255,255,.13) 50%,
+    transparent 62%);
+  transform: translateX(-55%) rotate(8deg);
+  animation: receipt-sheen 8s ease-in-out infinite; }
+.receipt > * { position: relative; z-index: 1; }
+@keyframes receipt-sheen {
+  0%, 35% { transform: translateX(-55%) rotate(8deg); opacity: 0; }
+  50% { opacity: .9; }
+  65%, 100% { transform: translateX(55%) rotate(8deg); opacity: 0; }
+}
+.receipt-stamp { position: absolute; top: 16px; right: 6px; z-index: 2;
+  padding: 5px 8px; border: 1.5px solid rgba(244,114,182,.6); border-radius: 7px;
+  color: #f9a8d4; font-size: 8.5px; font-weight: 700; line-height: 1.15;
+  letter-spacing: .12em; text-align: center; text-transform: uppercase;
+  transform: rotate(-11deg); opacity: .85; }
+.receipt-head { display: grid; gap: 2px; margin-bottom: 16px; text-align: center; }
+.receipt-kicker { font-size: 9.5px; letter-spacing: .28em; text-transform: uppercase;
+  color: #d8b4fe; }
+.receipt-title { font-size: 19px; letter-spacing: .08em; text-transform: uppercase;
+  color: #fff; }
+.receipt-sub { font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase;
+  color: #bda9dd; }
+.receipt-meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 14px; margin: 0; font-size: 11px; }
+.receipt-meta div { min-width: 0; }
+.receipt-meta dt { color: #a98cc9; font-size: 8.5px; letter-spacing: .14em;
+  text-transform: uppercase; }
+.receipt-meta dd { margin: 1px 0 0; color: #f4e9ff; overflow-wrap: anywhere; }
+.receipt-rule { height: 1px; margin: 14px 0;
+  background: repeating-linear-gradient(90deg, rgba(216,180,254,.45) 0 5px,
+    transparent 5px 10px); }
+.receipt-lines { list-style: none; margin: 0; padding: 0; display: grid; gap: 9px; }
+.receipt-lines li { display: flex; align-items: baseline; gap: 7px; font-size: 11.5px; }
+.receipt-item { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.receipt-name { color: #f4e9ff; overflow-wrap: anywhere; }
+.receipt-tag { flex: 0 0 auto; padding: 0 5px; border-radius: 999px;
+  background: rgba(192,132,252,.18); color: #ddc9f8; font-size: 7.5px;
+  letter-spacing: .08em; text-transform: uppercase; }
+.receipt-dots { flex: 1 1 16px; min-width: 12px;
+  border-bottom: 1px dotted rgba(196,181,253,.4); transform: translateY(-3px); }
+.receipt-share { flex: 0 0 auto; color: #c4b5fd; font-size: 10px;
+  font-variant-numeric: tabular-nums; }
+.receipt-amount { flex: 0 0 auto; min-width: 66px; text-align: right; color: #fff;
+  font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.receipt-totals { margin: 0; display: grid; gap: 5px; font-size: 11.5px; }
+.receipt-totals div { display: flex; justify-content: space-between; gap: 12px; }
+.receipt-totals dt { color: #b9a4d8; }
+.receipt-totals dd { margin: 0; color: #f4e9ff; font-variant-numeric: tabular-nums; }
+.receipt-totals .receipt-balance { margin-top: 4px; padding-top: 7px;
+  border-top: 1px dashed rgba(216,180,254,.35); font-size: 13px; }
+.receipt-totals .receipt-balance dt { color: #f0abfc; font-weight: 700; }
+.receipt-totals .receipt-balance dd { color: #fff; font-weight: 700; }
+.receipt-foot { margin: 14px 0 10px; text-align: center; color: #a98cc9;
+  font-size: 8.5px; line-height: 1.5; letter-spacing: .06em; text-transform: uppercase; }
+.receipt-barcode { width: 78%; height: 30px; margin: 0 auto; border-radius: 2px;
+  opacity: .8;
+  background: repeating-linear-gradient(90deg, rgba(244,233,255,.85) 0 2px,
+    transparent 2px 4px, rgba(244,233,255,.6) 4px 7px, transparent 7px 10px,
+    rgba(244,233,255,.9) 10px 11px, transparent 11px 14px); }
+.receipt-code { margin: 5px 0 0; text-align: center; color: #a98cc9;
+  font-size: 8px; letter-spacing: .18em; }
 @media (max-width: 900px) {
   .plan-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .plan-split { grid-template-columns: 1fr; }
@@ -252,7 +340,7 @@ _DASH_CSS = """
   .plan-row-head { display: none; }
   .cat-cols, .spend-cols { grid-template-columns: 1fr; }
   .plan-row { padding: 10px 12px; border: 1px solid var(--line);
-    border-radius: 12px; background: #fcfaff; margin-bottom: 10px; }
+    border-radius: 12px; background: #241041; margin-bottom: 10px; }
   .plan-row .row-no { display: none; }
   .plan-row input, .plan-row select { font-size: 14px; }
   .plan-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -262,6 +350,13 @@ _DASH_CSS = """
   .dash-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .resultbar .button { width: 100%; }
   .resultbar { align-items: flex-start; }
+  .receipt-wrap { padding: 2px; }
+  .receipt { padding: 22px 16px 16px; }
+  .receipt-meta { grid-template-columns: 1fr; gap: 6px; }
+  .receipt-lines li { font-size: 11px; gap: 5px; }
+  .receipt-tag { display: none; }
+  .receipt-amount { min-width: 58px; }
+  .receipt-stamp { top: 12px; right: 2px; }
 }
 @media (max-width: 420px) {
   .dash-cards, .plan-cards { grid-template-columns: 1fr; }
@@ -271,6 +366,13 @@ _DASH_CSS = """
 }
 @media print {
   .filters, .pager, .hero-actions, .resultbar .button, .active-filters { display: none !important; }
+  .receipt-wrap { display: block; padding: 0; }
+  .receipt { width: 100%; max-width: 430px; margin: 0 auto; background: #fff !important;
+    color: #111 !important; border: 1px dashed #444; box-shadow: none; }
+  .receipt * { color: #111 !important; border-color: #999 !important;
+    background: transparent !important; }
+  .receipt::before, .receipt-stamp, .receipt-barcode { display: none; }
+  .receipt-totals .receipt-balance { border-top: 1px dashed #444; }
 }
 """
 
@@ -409,7 +511,7 @@ def _document(
         f"{skip}"
         '<div class="scene" aria-hidden="true">'
         '<span class="orb orb-a"></span><span class="orb orb-b"></span>'
-        '<span class="orb orb-c"></span></div>\n'
+        '<span class="orb orb-c"></span><span class="orb orb-d"></span></div>\n'
         f"{body}</body>\n</html>\n"
     )
 
@@ -1068,10 +1170,13 @@ def _trend_panel(data: DashboardData) -> str:
 def _breakdown_panel(data: DashboardData) -> str:
     if not data.categories:
         return ""
+    category_shares = display_share_pcts(
+        [category["total_cents"] for category in data.categories]
+    )
     category_rows = [
         [escape_attr(category["category"]), integer(category["transaction_count"]),
-         money(category["total_kes"]), share_cell(category["share_pct"])]
-        for category in data.categories
+         money(category["total_kes"]), share_cell(share)]
+        for category, share in zip(data.categories, category_shares)
     ]
     merchant_rows = [
         [escape_attr(merchant["merchant"]), integer(merchant["transaction_count"]),
@@ -1087,8 +1192,9 @@ def _breakdown_panel(data: DashboardData) -> str:
   <section class="panel" id="breakdown" aria-labelledby="breakdown-title">
     <p class="eyebrow"><span class="section-no">04</span> Breakdown</p>
     <h2 id="breakdown-title">Where the filtered money went</h2>
-    <p class="lead">Category shares are percentages of the filtered total, so they always
-      add up to 100% for the rows you are looking at.</p>
+    <p class="lead">Category shares are percentages of the filtered total and use
+      largest-remainder rounding, so they add up to exactly 100.0% for the rows you are
+      looking at.</p>
     {table([("Category", False), ("Transactions", True), ("Total KES", True),
             ("Share", True)], category_rows)}
     <div class="split">
@@ -1576,7 +1682,11 @@ def render_plan_page(
         if plan is not None and analysis is not None
         else ""
     )
-    analysis_link = '<a href="#analysis">Analysis</a>' if analysis_html else ""
+    analysis_link = (
+        '<a href="#analysis">Analysis</a><a href="#analysis-receipt">Receipt</a>'
+        if analysis_html
+        else ""
+    )
     analysis_action = (
         '<a class="button ghost" href="#analysis">See the analysis</a>'
         if analysis_html
@@ -1754,7 +1864,7 @@ def _plan_cards(plan: object, analysis: object) -> str:
     if analysis.planned_cents:
         planned_hint = (
             f"{integer(len(plan.categories))} categories · "
-            f"{percent(analysis.planned_share_pct)} of available"
+            f"{percent(analysis.planned_share_pct)} of the money available"
         )
     else:
         planned_hint = f"{integer(len(plan.categories))} categories · no planned amounts"
@@ -1770,7 +1880,7 @@ def _plan_cards(plan: object, analysis: object) -> str:
         ("Planned", f"KES {money(analysis.planned_cents / 100)}", planned_hint),
         ("Spent", f"KES {money(analysis.spent_cents / 100)}",
          f"{integer(len(plan.spendings))} entries · "
-         f"{percent(analysis.spent_share_pct)} of available"),
+         f"{percent(analysis.spent_share_pct)} of the money available"),
         ("Left", left_value,
          "still unspent" if remaining >= 0 else "more than available"),
     ]
@@ -1866,7 +1976,7 @@ def _plan_insights(plan: object, analysis: object) -> str:
         items.append(
             f"Essential categories are {percent(analysis.essential_share_pct)} of "
             f"spending (KES {money(analysis.essential_spent_cents / 100)}) and "
-            f"{percent(essential_plan_share)} of the plan "
+            f"{percent(essential_plan_share)} of the planned total "
             f"(KES {money(analysis.essential_planned_cents / 100)})."
         )
     else:
@@ -1931,9 +2041,12 @@ def _plan_category_panel(plan: object, analysis: object) -> str:
         "Not used": "neutral",
         "No activity": "neutral",
     }
+    category_shares = display_share_pcts(
+        [item.share_pct for item in analysis.categories]
+    )
     rows: list[list[str]] = []
     row_classes: list[str] = []
-    for item in analysis.categories:
+    for item, share in zip(analysis.categories, category_shares):
         if item.difference_cents < 0:
             difference = f"-{money(-item.difference_cents / 100)}"
         else:
@@ -1948,20 +2061,41 @@ def _plan_category_panel(plan: object, analysis: object) -> str:
                 money(item.planned_cents / 100),
                 money(item.spent_cents / 100),
                 difference,
-                share_cell(item.share_pct),
+                share_cell(share),
                 f'<span class="pill {pill_classes[item.status]}">'
                 f"{escape_attr(item.status)}</span>",
             ]
         )
         row_classes.append("over" if item.flagged else "")
 
+    total_difference = analysis.planned_cents - analysis.spent_cents
+    total_difference_text = (
+        f"-{money(-total_difference / 100)}"
+        if total_difference < 0
+        else money(total_difference / 100)
+    )
+    rows.append(
+        [
+            "Total",
+            money(analysis.planned_cents / 100),
+            money(analysis.spent_cents / 100),
+            total_difference_text,
+            share_cell(100.0),
+            "",
+        ]
+    )
+    row_classes.append("total")
+
+    bucket_shares = display_share_pcts(
+        [analysis.essential_share_pct, 100.0 - analysis.essential_share_pct]
+    )
     essential_rows = [
         ["Essential", money(analysis.essential_planned_cents / 100),
          money(analysis.essential_spent_cents / 100),
-         share_cell(analysis.essential_share_pct)],
+         share_cell(bucket_shares[0])],
         ["Flexible", money(analysis.flexible_planned_cents / 100),
          money(analysis.flexible_spent_cents / 100),
-         share_cell(100.0 - analysis.essential_share_pct)],
+         share_cell(bucket_shares[1])],
     ]
     return f"""
   <section class="panel" id="analysis-categories"
@@ -1975,15 +2109,19 @@ def _plan_category_panel(plan: object, analysis: object) -> str:
     <h3>Plan next to actual</h3>
     {compare_chart}
     <h3>The numbers by category</h3>
+    <p class="section-note">Every share is a share of recorded spending
+      (KES {money(analysis.spent_cents / 100)}). Shares are rounded with the largest
+      remainder, so the column adds up to exactly 100.0%.</p>
     {table([("Category", False), ("Planned KES", True), ("Spent KES", True),
-            ("Planned minus spent", True), ("Share of spending", True),
+            ("Planned minus spent", True), ("Share of recorded spending", True),
             ("Status", False)], rows, row_classes=row_classes)}
     <div class="plan-split">
       <div>
         <h3>Essential and flexible</h3>
-        <p class="section-note">The split you chose while entering the categories.</p>
+        <p class="section-note">The split you chose while entering the categories.
+          Shares are of recorded spending and also add up to 100.0%.</p>
         {table([("Bucket", False), ("Planned KES", True), ("Spent KES", True),
-                ("Share of spending", True)], essential_rows)}
+                ("Share of recorded spending", True)], essential_rows)}
       </div>
       <div>
         <h3>How to read it</h3>
@@ -2050,6 +2188,80 @@ def _plan_method_panel(plan: MoneyPlan) -> str:
   </section>"""
 
 
+def _plan_receipt_panel(plan: MoneyPlan, analysis: PlanAnalysis) -> str:
+    spent_categories = [
+        item for item in analysis.ranked_categories if item.spent_cents
+    ]
+    shares = display_share_pcts([item.share_pct for item in spent_categories])
+    lines = "".join(
+        "<li>"
+        f'<span class="receipt-item"><span class="receipt-name">'
+        f"{escape_attr(item.name)}</span>"
+        f'<span class="receipt-tag">{"Essential" if item.essential else "Flexible"}</span>'
+        "</span>"
+        '<span class="receipt-dots" aria-hidden="true"></span>'
+        f'<span class="receipt-share">{percent(share)}</span>'
+        f'<span class="receipt-amount">{money(item.spent_cents / 100)}</span>'
+        "</li>"
+        for item, share in zip(spent_categories, shares)
+    )
+    if not lines:
+        lines = (
+            '<li><span class="receipt-item"><span class="receipt-name">'
+            "No recorded spending</span></span></li>"
+        )
+    if analysis.remaining_cents >= 0:
+        balance_label = "Left unspent"
+        balance_value = money(analysis.remaining_cents / 100)
+    else:
+        balance_label = "Over the money available"
+        balance_value = f"-{money(-analysis.remaining_cents / 100)}"
+    return f"""
+  <section class="panel" id="analysis-receipt"
+    aria-labelledby="analysis-receipt-title">
+    <p class="eyebrow"><span class="section-no">09</span> Receipt</p>
+    <h2 id="analysis-receipt-title">Your plan, itemised</h2>
+    <p class="lead">A receipt for the same numbers as the analysis: every category you
+      spent in, the planned total, the money available and the balance left.</p>
+    <div class="receipt-wrap">
+      <article class="receipt"
+        aria-label="Money plan receipt for {escape_attr(plan.student_name)}">
+        <span class="receipt-stamp" aria-hidden="true">Local<br>only</span>
+        <header class="receipt-head">
+          <span class="receipt-kicker">Student Spending Analytics</span>
+          <strong class="receipt-title">Money plan receipt</strong>
+          <span class="receipt-sub">One student &middot; made-up numbers &middot; KES</span>
+        </header>
+        <dl class="receipt-meta">
+          <div><dt>Name</dt><dd>{escape_attr(plan.student_name)}</dd></div>
+          <div><dt>Entries</dt><dd>{integer(len(plan.spendings))}</dd></div>
+          <div><dt>Period</dt><dd>{escape_attr(analysis.first_date.isoformat())} to
+            {escape_attr(analysis.last_date.isoformat())}</dd></div>
+          <div><dt>Method</dt><dd>{escape_attr(BUDGET_METHODS[plan.method])}</dd></div>
+        </dl>
+        <div class="receipt-rule" aria-hidden="true"></div>
+        <ul class="receipt-lines">{lines}</ul>
+        <div class="receipt-rule" aria-hidden="true"></div>
+        <dl class="receipt-totals">
+          <div><dt>Planned total</dt><dd>{money(analysis.planned_cents / 100)}</dd></div>
+          <div><dt>Recorded spending</dt><dd>{money(analysis.spent_cents / 100)}</dd></div>
+          <div><dt>Money available</dt><dd>{money(analysis.money_available_cents / 100)}</dd></div>
+          <div class="receipt-balance"><dt>{balance_label}</dt><dd>{balance_value}</dd></div>
+        </dl>
+        <p class="receipt-foot">Generated locally &middot; not a financial document<br>
+          synthetic learning numbers only</p>
+        <div class="receipt-barcode" aria-hidden="true"></div>
+        <p class="receipt-code" aria-hidden="true">SSA &middot;
+          {escape_attr(analysis.first_date.isoformat())} &middot;
+          {escape_attr(analysis.last_date.isoformat())}</p>
+      </article>
+    </div>
+    <p class="plan-section-note">To keep this receipt, print this page or choose
+      &ldquo;Save as PDF&rdquo; in your browser. Nothing is uploaded or stored by the
+      platform.</p>
+  </section>"""
+
+
 def _plan_analysis_sections(plan: MoneyPlan, analysis: PlanAnalysis) -> str:
     summary = _plan_summary(plan, analysis)
     return f"""
@@ -2070,6 +2282,7 @@ def _plan_analysis_sections(plan: MoneyPlan, analysis: PlanAnalysis) -> str:
   {_plan_category_panel(plan, analysis)}
   {_plan_spending_panel(plan, analysis)}
   {_plan_method_panel(plan)}
+  {_plan_receipt_panel(plan, analysis)}
 """
 
 
@@ -2094,7 +2307,7 @@ class DashboardServer(ThreadingHTTPServer):
 
 class DashboardHandler(BaseHTTPRequestHandler):
     server: DashboardServer
-    server_version = "StudentSpendingDashboard/2.0.0"
+    server_version = "StudentSpendingDashboard/2.1.0"
     sys_version = ""
     timeout = 30
 

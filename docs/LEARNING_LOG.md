@@ -23,7 +23,8 @@ useful to whoever maintains this project next — including future me.
 | 13. Interactive dashboard | done | `web.py`, `student-spending serve`, 20 dashboard tests, browser-checked at 1280 px and 390 px |
 | 14. Upload platform | done | `platform.py`, `/upload`, isolated workspaces, 11 upload tests, browser-checked upload and analysis |
 | 15. Single-file upload | done | one transactions CSV, derived students, budget variance skipped, 95 tests |
-| 16. Per-student money plan | done | `personal.py`, `/plan`, user-defined categories, add-row controls, saved results, 38 plan tests (133 total), browser-checked at 1440 px and 390 px |
+| 16. Per-student money plan | done | `personal.py`, `/plan`, user-defined categories, add-row controls, analysis rendered in-page without saved plans |
+| 17. Exact shares, receipt and dark theme | done | largest-remainder shares in the planner, dashboard and report, inline printable receipt, animated dark-purple backdrop, 138 tests, browser-checked at 1440 px and 390 px |
 
 ## Decisions worth remembering
 
@@ -276,6 +277,26 @@ useful to whoever maintains this project next — including future me.
     message; assert both states in the web test.
     *Lesson:* every limited control needs copy for the available and exhausted states.
 
+21. **The category shares appeared to add up to 100.1%.** Seven equal categories each
+    showed 14.3%, so the visible column totalled 100.1% even though every underlying
+    fraction was correct.
+    *Cause:* each share was rounded independently for display, so the rounding drift was
+    never redistributed.
+    *Fix:* add `display_share_pcts` in `components.py`. It uses the largest-remainder
+    method at the displayed precision, sends the spare tenths to the largest remainders,
+    and feeds the planner category table, bucket table and receipt, plus the dashboard
+    breakdown and report category table. The copy now names each denominator, and tests
+    pin the seven-equal-parts case and a 100.0% total in the dashboard and report.
+    *Lesson:* rounding is a presentation decision. A column that claims to be parts of one
+    whole must add up to that whole.
+
+22. **The dark theme could have made print output invisible.** Panels and text moved to a
+    dark palette, but the print block still assumed dark text on white surfaces.
+    *Fix:* rewrite the print rules to set panel, table and receipt surfaces to white and
+    all inherited text to near-black, then verify with Playwright's print media emulation.
+    *Lesson:* a theme is not finished until the reduced-motion and print variants are
+    checked, not just the default screen.
+
 ## Concepts this project exercises
 
 Extraction boundaries; per-row error isolation; normalisation vs validation; policy for
@@ -290,7 +311,9 @@ handling; read-only database connections; `LIKE` escaping; content security poli
 formula injection; user-defined taxonomies and case-insensitive canonical keys; POST/
 redirect/GET; unguessable resource ids as capability links; JSON persistence with a
 strict reload path; grouped SVG charts; no-JavaScript draft round-trips for dynamic form
-rows; and the difference between "valid" and "unusual".
+rows; largest-remainder rounding for displayed shares; CSS-only background and receipt
+animation with reduced-motion and print fallbacks; and the difference between "valid" and
+"unusual".
 
 ## Next exercises (for the learner, not the pipeline)
 

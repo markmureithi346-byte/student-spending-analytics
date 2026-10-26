@@ -7,9 +7,10 @@ transactions CSV, derives the student list, runs the pipeline into an isolated w
 and opens the analysis without touching the committed warehouse.
 
 It also includes a per-student money planner: a student enters the money they have, names
-their own categories, records planned and actual amounts, and gets a saved analysis with
-planned-versus-actual totals, category shares and inline SVG charts. The planner is
-local, needs no JavaScript and never asks for bank or card credentials.
+their own categories, records planned and actual amounts, and gets an in-page analysis
+with planned-versus-actual totals, exact category shares, inline SVG charts and a
+printable receipt. The planner is local, needs no JavaScript and never asks for bank or
+card credentials.
 
 Built as a learning project: the code is intentionally module-by-module and documented
 so the reasoning behind each stage is visible.
@@ -99,7 +100,7 @@ virtual environment.
 ```powershell
 python scripts\generate_synthetic_data.py     # writes data/raw/*.csv
 student-spending --full-refresh               # deletes the warehouse, then rebuilds it
-python run_tests.py                           # 128 tests
+python run_tests.py                           # 138 tests
 start reports\spending_report.html
 student-spending serve --open                 # local server; blocks until Ctrl+C
 ```
@@ -268,15 +269,25 @@ redirect, no saved plan, no result link and no separate file. The analysis shows
 - a category table with planned, spent, difference, share and status (**On plan**,
   **Under plan**, **Over plan**, **No plan**, **Not used**, **No activity**);
 - an essential-versus-flexible split, the spending entries behind the totals, and the
-  budgeting method you chose.
+  budgeting method you chose;
+- a receipt summary with each spent-in category, its share, the planned total, the money
+  available and the balance left, ready to print or save as PDF from the browser.
 
 ![Money plan analysis below the form](docs/images/plan-result.png)
+
+![Money plan receipt](docs/images/plan-receipt.png)
 
 Everything is calculated from the submitted values: totals, shares, the daily average
 over the entered date span, and the over-plan and unplanned lists. The page does not
 advise on financial products or tell the student what they should spend. The graphs are
 generated locally as inline SVG; no chart service, remote font or third-party request is
 involved.
+
+Percentages name their denominator in the copy: shares in the category tables are of
+**recorded spending**, while the planned and spent cards are of the **money available**.
+Display shares use the largest-remainder method on the planner, dashboard breakdown and
+report, so one-decimal values add up to exactly 100.0% instead of drifting to 100.1%
+when several categories are equal.
 
 Because nothing is stored, there is no link to keep and no file to clean up. Adjust any
 value and run the analysis again; the page always reflects the form in front of you.
@@ -285,8 +296,11 @@ are `POST /upload` and `POST /plan`, and `POST /plan` writes nothing beyond the 
 
 ![Money plan at phone width](docs/images/plan-mobile.png)
 
-At phone width the cards and table rows stack, and each chart scrolls sideways inside
-its own container with a visible hint, so no value is squeezed off the page.
+At phone width the cards and table rows stack, each chart scrolls sideways inside its own
+container with a visible hint, and the receipt switches to a single-column summary, so no
+value is squeezed off the page. The planner shares the animated dark-purple theme with
+the report: motion stops under `prefers-reduced-motion`, and the print stylesheet turns
+the panels and receipt white for paper or PDF.
 
 ## Upload and analyze a CSV
 
@@ -392,8 +406,9 @@ The server binds to `127.0.0.1` by default, opens SQLite with `mode=ro` **and**
 restrictive Content-Security-Policy, `nosniff`, `no-store` and a `same-origin` referrer
 policy, escapes all database text into HTML, and prefixes spreadsheet-formula characters
 in CSV exports. The dashboard itself is read-only: the only write endpoints are
-`POST /upload` (which starts an isolated pipeline run) and `POST /plan` (which saves one
-JSON plan). There is no login and the server serves no arbitrary files.
+`POST /upload` (which starts an isolated pipeline run) and `POST /plan` (which analyses a
+submitted plan and writes only the response). There is no login and the server serves no
+arbitrary files.
 
 ![Dashboard at phone width](docs/images/dashboard-mobile.png)
 
@@ -422,7 +437,6 @@ student-spending-analytics/
 ├── data/
 │   ├── raw/                  committed synthetic inputs (3 CSV files)
 │   ├── uploads/              isolated copies of uploaded analyses (git-ignored)
-│   ├── plans/                saved one-student money plans as JSON (git-ignored)
 │   ├── quarantine/           generated rejection audit CSVs (git-ignored)
 │   └── processed/            reserved for future exports (git-ignored)
 ├── docs/                     data dictionary, quality policy, learning log
@@ -430,7 +444,7 @@ student-spending-analytics/
 ├── scripts/                  generate_synthetic_data.py, check_env.py
 ├── sql/                      schema.sql, example_queries.sql
 ├── src/student_spending/     pipeline, report, platform, dashboard and plan modules
-├── tests/                    133 unittest cases
+├── tests/                    138 unittest cases
 ├── warehouse/                generated SQLite database; uploads/ per analysis (git-ignored)
 ├── logs/                     pipeline.log (git-ignored)
 ├── pyproject.toml            package metadata, console script, build config
@@ -513,7 +527,7 @@ python run_tests.py
 python -m unittest discover -s tests -t . -v
 ```
 
-128 tests covering: extraction failures and malformed rows, derived and explicit student
+138 tests covering: extraction failures and malformed rows, derived and explicit student
 dimensions, every validation rule, normalisation, duplicate handling, reconciliation
 accounting, idempotent loading, foreign keys and CHECK constraints, analytics totals and
 shares, anomaly flagging, all quality checks, end-to-end pipeline runs including rerun
@@ -528,9 +542,12 @@ dates, bounds, at least two categories and one spending row, synthetic confirmat
 integer-cent analysis (planned/spent/left/unallocated, category statuses, essential and
 flexible shares, daily average), and the web flow: form rendering, adding category and
 spending rows while preserving input without saving, both 100-row limits, submission that
-renders the analysis and charts in the same page with no redirect or saved file,
+renders the analysis, charts and receipt in the same page with no redirect or saved file,
 validation errors that preserve input and render no analysis, cross-site and
-wrong-content-type guards, injected-text escaping, and analysis with zero planned amounts.
+wrong-content-type guards, injected-text escaping, analysis with zero planned amounts,
+largest-remainder rounding that adds up to 100.0%, and receipt figures that match the
+analysis. Component tests also cover the rounding helper directly, including the
+seven-equal-parts case that ordinary rounding turns into 100.1%.
 
 The upload platform adds tests for single-CSV multipart validation (missing, duplicate
 and unknown fields; wrong extensions; missing headers; header-only and binary files;
@@ -566,6 +583,9 @@ escaped analysis names.
 | Planner analyses in the response, without persistence | It is a per-student worksheet, not a batch fact table; rendering the result in the page avoids saved files, cleanup and stale links while preserving the pipeline's reconciliation identities and the sample dataset |
 | Plan analysis computes in Python from validated values | The page shows arithmetic on the student's own numbers and charts them as inline SVG; it does not claim a statistical or advisory result |
 | No plan ids or saved results | With nothing stored, there is no link to leak or file to delete; every submission reflects only the form the student just submitted |
+| Largest-remainder share rounding | Displayed one-decimal shares should match the whole; naive rounding of seven equal parts shows 14.3% each and a 100.1% total, so the spare tenth goes to the largest remainders |
+| Receipt is a print view, not a stored document | The receipt reuses the analysis values and the browser's print/save-as-PDF flow, so it adds no file, link or retention obligation |
+| Animated CSS backdrop with a still alternative | The moving gradient, stars, orbs and receipt sheen are pure CSS; `prefers-reduced-motion` disables them and the print stylesheet removes them entirely |
 | Editable install with a console script | One command to run the pipeline; the `src/` layout also prevents tests from importing the package by accident |
 | CI runs the pipeline twice | Proves idempotency on a clean machine, not just in a local wrapper |
 
@@ -614,7 +634,8 @@ external services.
   and stores nothing: there is no history, no saved plan, no result link and no file to
   delete. Opening `/plan` again starts from a blank form.
 - Because nothing is saved, the analysis exists only in the page that answered the
-  submission. Printing or saving that browser page is the only way to keep a copy.
+  submission. Printing or saving that browser page is the only way to keep a copy; the
+  receipt is a styled print view, not a downloadable file format.
 - The plan analysis describes the entered numbers (totals, shares, averages and plan
   status). It is not a forecast, credit assessment or financial advice.
 - No authentication or encryption. That is acceptable only because the data is fake and
@@ -630,10 +651,10 @@ external services.
 - dbt-style transformation tests or a data quality framework once the SQL grows.
 - Postgres or DuckDB when data outgrows a single SQLite file.
 - Add saved filter views and a small JSON endpoint over the same validated filters.
-- Let the planner import a student's own rows from the dashboard or a CSV, add monthly
-  periods and recurring entries, and export the analysis.
-- Add a plan list with an explicit delete/retention action once the planner has a real
-  authentication story.
+- Let the planner import a student's own rows from the dashboard or a CSV, and add
+  monthly periods and recurring entries.
+- Add an explicit receipt export once a retention and authentication story exists; until
+  then the browser print/save flow keeps the planner honest about storing nothing.
 - Publish tagged releases once the input contract has stayed stable across a few runs.
 
 ## Project log

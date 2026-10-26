@@ -187,6 +187,16 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(self.row_count(page), 25)
         self.assertIn('href="/report"', page)
 
+    def test_category_shares_add_up_to_one_hundred(self) -> None:
+        _, _, page = self.fetch(self.page_url(per_page="100"))
+        region = page[page.index('id="breakdown"'):]
+        shares = [
+            float(value)
+            for value in re.findall(r'<span class="share-value">([\d.]+)%</span>', region)
+        ]
+        self.assertGreater(len(shares), 1)
+        self.assertEqual(round(sum(shares), 1), 100.0)
+
     def test_category_filter_changes_every_number(self) -> None:
         count, total = self.sql_aggregate("category = ?", ("Food",))
         status, _, page = self.fetch(self.page_url(category="Food", per_page="100"))
@@ -1252,6 +1262,7 @@ class MoneyPlanTests(unittest.TestCase):
             "analysis-categories",
             "analysis-spending",
             "analysis-method",
+            "analysis-receipt",
             "generated in this page",
         ):
             self.assertIn(text, page)
@@ -1394,6 +1405,56 @@ class MoneyPlanTests(unittest.TestCase):
         self.assertIn("KES 1,300.00", page)
         self.assertIn("No plan", page)
         self.assertIn("plan-compare", page)
+
+    def test_receipt_summarises_the_same_analysis(self) -> None:
+        page = self.create_plan()
+        for text in (
+            'id="analysis-receipt"',
+            'href="#analysis-receipt"',
+            "Money plan receipt",
+            "Your plan, itemised",
+            "Planned total",
+            "Recorded spending",
+            "Money available",
+            "Left unspent",
+            "not a financial document",
+            "receipt-barcode",
+            "receipt-stamp",
+        ):
+            self.assertIn(text, page)
+        self.assertIn('<span class="receipt-name">Rent</span>', page)
+        self.assertIn('<span class="receipt-share">48.0%</span>', page)
+        self.assertIn('<span class="receipt-amount">6,000.00</span>', page)
+        self.assertIn('<span class="receipt-amount">4,500.00</span>', page)
+        self.assertIn("1,500.00", page)
+        self.assertNotIn("receipt-saved", page)
+        self.assertNotIn("/plan?receipt", page)
+
+    def test_displayed_category_shares_add_up_to_one_hundred(self) -> None:
+        categories = tuple(
+            (f"Equal {number}", "1000", "flexible") for number in range(1, 8)
+        )
+        spendings = tuple(
+            ("2026-10-01", f"Equal {number}", "100", "") for number in range(1, 8)
+        )
+        fields = self.plan_fields(categories=categories, spendings=spendings)
+        fields.extend([("category_rows", "7"), ("spending_rows", "7")])
+        page = self.create_plan(fields)
+
+        start = page.index('id="analysis-categories"')
+        end = page.index('id="analysis-spending"')
+        region = page[start:end]
+        shares = re.findall(r'<span class="share-value">([\d.]+)%</span>', region)
+        self.assertEqual(shares.count("14.3"), 6)
+        self.assertEqual(shares.count("14.2"), 1)
+        self.assertNotIn("100.1%", region)
+
+    def test_percentage_copy_names_each_denominator(self) -> None:
+        page = self.create_plan()
+        self.assertIn("Share of recorded spending", page)
+        self.assertIn("of the money available", page)
+        self.assertIn("of the planned total", page)
+        self.assertIn("adds up to exactly 100.0%", page)
 
 
 if __name__ == "__main__":

@@ -15,6 +15,7 @@ from pathlib import Path
 from . import analytics
 from .components import (
     bar_chart as _bar_chart,
+    display_share_pcts as _display_share_pcts,
     integer as _int,
     money as _money,
     percent as _percent,
@@ -107,7 +108,12 @@ def _quality_banner(total: int, failures: int) -> str:
     )
 
 
-def _headline(kpis: dict, categories: list[dict], budget: dict) -> str:
+def _headline(
+    kpis: dict,
+    categories: list[dict],
+    budget: dict,
+    category_shares: list[float] | None = None,
+) -> str:
     sentences = [
         f"{_int(kpis['student_count'])} synthetic students spent "
         f"<strong>KES {_money(kpis['total_kes'])}</strong> across "
@@ -115,9 +121,10 @@ def _headline(kpis: dict, categories: list[dict], budget: dict) -> str:
     ]
     if categories:
         top = categories[0]
+        top_share = category_shares[0] if category_shares else top["share_pct"]
         sentences.append(
             f"<strong>{html.escape(str(top['category']))}</strong> takes the largest share"
-            f" at {_percent(top['share_pct'])}."
+            f" at {_percent(top_share)}."
         )
     if budget["budget_lines"]:
         sentences.append(
@@ -209,10 +216,13 @@ def write_report(
          _int(month["transaction_count"]), _money(month["total_kes"])]
         for month in months
     ]
+    category_shares = _display_share_pcts(
+        [category["total_cents"] for category in categories]
+    )
     category_rows = [
         [html.escape(category["category"]), _int(category["transaction_count"]),
-         _money(category["total_kes"]), _share_cell(category["share_pct"])]
-        for category in categories
+         _money(category["total_kes"]), _share_cell(share)]
+        for category, share in zip(categories, category_shares)
     ]
     student_rows = [
         [html.escape(student["profile_label"]), html.escape(student["student_id"]),
@@ -256,7 +266,7 @@ def write_report(
             "Every row read from the CSV must end up accepted, rejected, or quarantined, "
             "and every accepted row must reach the warehouse.",
         ),
-        lead=_headline(kpis, categories, budget),
+        lead=_headline(kpis, categories, budget, category_shares),
         anchor="overview",
     )
 
@@ -303,8 +313,8 @@ def write_report(
             [("Category", False), ("Transactions", True), ("Total KES", True), ("Share", True)],
             category_rows,
         ),
-        lead="Ranked by total spend. The bar beside each share repeats the percentage "
-             "so the mix is easy to scan.",
+        lead="Ranked by total spend. Shares use largest-remainder rounding so they add "
+             "up to exactly 100.0%, and the bar repeats each percentage.",
         anchor="categories",
     )
 

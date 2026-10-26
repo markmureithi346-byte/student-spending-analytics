@@ -4,6 +4,46 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-10-26
+
+Adds a printable receipt summary, makes displayed shares add up exactly, and gives the
+whole platform a living dark-purple surface.
+
+### Added
+
+- A **Receipt** section (`#analysis-receipt`) inside the analysis, itemising every
+  category with recorded spending, each share, the planned total, the money available and
+  the balance. The receipt is generated locally from the same analysis values, carries a
+  stamp and decorative barcode, and prints or saves as PDF through the browser. Nothing is
+  stored and there is no extra route or result link.
+- A totals row in the category table, so the planned, spent, difference and 100.0% share
+  columns can be checked at a glance.
+- Component tests for the rounding helper and web tests for the receipt and percentage
+  copy.
+
+### Changed
+
+- Displayed one-decimal shares in the planner, dashboard breakdown and report now use
+  the largest-remainder method, so seven equal categories show six 14.3% shares and one
+  14.2% instead of seven 14.3% shares totalling 100.1%. The bar widths use the same
+  rounded values.
+- Percentage copy now names its denominator: shares are of **recorded spending**, cards
+  are of the **money available**, and the essential insight is of the **planned total**.
+- Panels, cards, tables, forms, inputs, charts and banners are now dark-purple surfaces
+  with light text; the page background gains a slow gradient drift, star field, rotating
+  glow and an extra orb. The receipt has a glossy sheen.
+- Reduced-motion and print behaviour were extended to the new effects: motion stops under
+  `prefers-reduced-motion`, and print turns panels and the receipt white with dark text.
+
+### Fixed
+
+- The apparent percentage inaccuracy where rounded category shares could total more than
+  100.0%.
+- Stale README references to saved JSON plans and `data/plans/` that survived the 2.0.0
+  persistence removal.
+
+Release version is now `2.1.0`; the suite is 138 tests.
+
 ## [2.0.0] - 2026-10-26
 
 Renders the money-plan analysis, totals and graphs directly below the form, so there is no

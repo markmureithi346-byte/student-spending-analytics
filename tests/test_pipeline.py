@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import dataclasses
 import io
+import re
 import sqlite3
 import tempfile
 import unittest
@@ -104,6 +105,19 @@ class PipelineIntegrationTests(unittest.TestCase):
         self.assertIn("Student Spending Analytics", report_text)
         self.assertIn("synthetic", report_text.lower())
         self.assertTrue((self.options.quarantine_dir / f"rejections_{run['run_id']}.csv").exists())
+
+    def test_report_category_shares_add_up_to_one_hundred(self) -> None:
+        self.assertEqual(self.run_pipeline_quietly(self.options), 0)
+        report_text = (
+            self.options.reports_dir / "spending_report.html"
+        ).read_text(encoding="utf-8")
+        region = report_text[report_text.index('id="categories"'):]
+        shares = [
+            float(value)
+            for value in re.findall(r'<span class="share-value">([\d.]+)%</span>', region)
+        ]
+        self.assertGreater(len(shares), 1)
+        self.assertEqual(round(sum(shares), 1), 100.0)
 
     def test_second_run_does_not_duplicate_transactions(self) -> None:
         self.assertEqual(self.run_pipeline_quietly(self.options), 0)

@@ -7,6 +7,7 @@ came back from SQL and escape text before it reaches the page.
 from __future__ import annotations
 
 import html
+import math
 
 
 def money(value: object) -> str:
@@ -28,6 +29,33 @@ def percent(value: object) -> str:
         return f"{float(value):.1f}%"
     except (TypeError, ValueError):
         return "0.0%"
+
+
+def display_share_pcts(values: list[float], decimals: int = 1) -> list[float]:
+    """Round parts of a whole so the displayed percentages add up to 100.0%.
+
+    Ordinary rounding can make a column show 100.1% (seven equal categories each
+    round to 14.3%). The largest-remainder method keeps total drift at zero by
+    giving the spare tenths to the items that lost the most to rounding.
+    """
+    if not values:
+        return []
+    parts = [max(0.0, float(value)) for value in values]
+    total = sum(parts)
+    if total <= 0:
+        return [0.0 for _ in parts]
+    factor = 10 ** decimals
+    scaled = [part * 100.0 * factor / total for part in parts]
+    floors = [math.floor(value) for value in scaled]
+    spare = 100 * factor - sum(floors)
+    ranked = sorted(
+        range(len(parts)),
+        key=lambda index: (scaled[index] - floors[index], -index),
+        reverse=True,
+    )
+    for index in ranked[:spare]:
+        floors[index] += 1
+    return [value / factor for value in floors]
 
 
 def share_cell(value: object) -> str:
