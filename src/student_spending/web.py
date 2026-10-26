@@ -2150,7 +2150,7 @@ class DashboardServer(ThreadingHTTPServer):
 
 class DashboardHandler(BaseHTTPRequestHandler):
     server: DashboardServer
-    server_version = "StudentSpendingDashboard/1.4.3"
+    server_version = "StudentSpendingDashboard/1.4.4"
     sys_version = ""
     timeout = 30
 

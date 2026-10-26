@@ -4,6 +4,22 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.4] - 2026-10-26
+
+Starts both lists in the money plan with a single row, so the form stays short and grows
+only as the student adds rows.
+
+### Changed
+
+- Categories and Spending now open with one row each instead of 12. The **+** buttons
+  remain the gradual path up to 100 rows, and still preserve the whole draft without
+  saving.
+- Row counters now start at "1 of 100 category rows" and "1 of 100 spending rows"; the
+  first click adds row 2, and later clicks keep appending one row at a time.
+- Validation is unchanged: at least two named categories and one complete spending row
+  are still required, so a student adds their second category with the same **+**.
+- Release version is now `1.4.4`; the suite stays at 133 tests.
+
 ## [1.4.3] - 2026-10-26
 
 Adds the same **+** control to Spending, so both lists in the money plan start compact and

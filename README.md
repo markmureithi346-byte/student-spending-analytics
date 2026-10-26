@@ -243,18 +243,18 @@ form is an ordinary HTML form with no JavaScript:
 2. **Categories** — name your own categories, in your own words. Each row takes an
    optional planned amount and an **Essential** or **Flexible** flag. There is no fixed
    category list. Blank rows are ignored, and at least two named categories are required.
-   The **+** button beside the heading adds rows, from 12 up to 100; it preserves every
+   The **+** button beside the heading adds rows, from one up to 100; it preserves every
    value you have typed and does not save a plan.
 3. **Spending** — one row per purchase or payment: date, one of your category names,
    amount and an optional note. Category matching ignores capitalisation, and entries in
    a category with no planned amount are still included and marked **No plan**. The
-   **+** button beside this heading adds rows, from 12 up to 100, with the same
+   **+** button beside this heading adds rows, from one up to 100, with the same
    preserve-and-do-not-save behaviour.
 4. **Review** — confirm the numbers are made up, then select **Run my analysis**.
 
 Amounts accept `2,500`, `2500`, `12 500` and `KES 2500.50`, and are stored as integer
-cents. The form starts with 12 category rows and 12 spending rows; the **+** buttons
-extend either list to 100. A plan cannot hold more than those limits.
+cents. The form starts with one category row and one spending row; the **+** buttons grow
+either list to 100. A plan cannot hold more than those limits.
 
 The result page is saved under an unguessable `/plan?plan=p-…` link and shows:
 
@@ -614,7 +614,7 @@ external services.
 - The money planner is a single-student worksheet with no history, month switching or
   comparison between periods. It does not import the sample warehouse or an uploaded
   CSV, and it has no recurring-entry or currency-conversion support; all amounts are KES.
-- The planner form starts with 12 category rows and 12 spending rows, each extendable
+- The planner form starts with one category row and one spending row, each extendable
   to 100 with its **+** button. Every submission creates a new saved plan, including
   **Edit as a copy**. There is no in-place update, delete button, retention policy or
   list of saved plans; remove files under `data/plans/` by hand.

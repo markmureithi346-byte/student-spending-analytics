@@ -136,6 +136,11 @@ useful to whoever maintains this project next — including future me.
   each spending row four, so a form with both lists at 100 needs room for roughly 700
   fields. `MAX_FORM_FIELDS` sits at 800, and a test saves a plan at both maxima so the
   constant cannot drift below what the form can actually produce.
+- **Start with one row, grow on demand.** Both lists open with a single row and use the
+  **+** control to add the next one. Twelve empty rows made the form look like homework
+  and buried the controls; one row matches how a student fills a notebook. The minimum
+  stays two categories and one spending row, so the validation message still teaches the
+  requirement instead of the layout hiding it.
 
 ## Bugs hit during development
 

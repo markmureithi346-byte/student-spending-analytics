@@ -1090,10 +1090,11 @@ class MoneyPlanTests(unittest.TestCase):
             "method_note",
             "synthetic",
             "category_name_1",
-            "category_name_12",
-            "spending_date_12",
+            "spending_date_1",
         ):
             self.assertIn(f'name="{control}"', page)
+        self.assertNotIn('name="category_name_2"', page)
+        self.assertNotIn('name="spending_date_2"', page)
         self.assertIn('action="/plan"', page)
         self.assertIn("There is no fixed category list", page)
         self.assertIn("Made-up numbers only.", page)
@@ -1110,49 +1111,56 @@ class MoneyPlanTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(body, "")
         self.assertGreater(int(headers["Content-Length"]), 0)
-        self.assertIn('name="category_rows" value="12"', page)
-        self.assertIn('name="spending_rows" value="12"', page)
+        self.assertIn('name="category_rows" value="1"', page)
+        self.assertIn('name="spending_rows" value="1"', page)
         self.assertIn('aria-label="Add another category"', page)
         self.assertIn('aria-label="Add another spending row"', page)
-        self.assertIn("12 of 100 category rows", page)
-        self.assertIn("12 of 100 spending rows", page)
+        self.assertIn("1 of 100 category rows", page)
+        self.assertIn("1 of 100 spending rows", page)
 
     def test_add_category_keeps_typed_values_without_saving(self) -> None:
-        fields = self.plan_fields()
+        fields = self.plan_fields(
+            categories=(("Rent", "6000", "essential"),),
+            spendings=(("2026-10-01", "Rent", "500", "October rent"),),
+        )
         fields.extend(
             [
-                ("category_rows", "12"),
-                ("spending_rows", "24"),
+                ("category_rows", "1"),
+                ("spending_rows", "1"),
                 ("action", "add_category"),
             ]
         )
         status, _, page = self.post_form(fields)
         self.assertEqual(status, 200)
-        self.assertIn('name="category_name_13"', page)
-        self.assertNotIn('name="category_name_14"', page)
-        self.assertIn('name="category_rows" value="13"', page)
+        self.assertIn('name="category_name_2"', page)
+        self.assertNotIn('name="category_name_3"', page)
+        self.assertIn('name="category_rows" value="2"', page)
         self.assertIn('value="Amina"', page)
         self.assertIn('value="Rent"', page)
-        self.assertIn("13 of 100 category rows", page)
+        self.assertIn('value="October rent"', page)
+        self.assertIn("2 of 100 category rows", page)
         self.assertEqual(self.plan_files(), set())
 
     def test_add_spending_keeps_typed_values_without_saving(self) -> None:
-        fields = self.plan_fields()
+        fields = self.plan_fields(
+            categories=(("Rent", "6000", "essential"),),
+            spendings=(("2026-10-01", "Rent", "500", "October rent"),),
+        )
         fields.extend(
             [
-                ("category_rows", "12"),
-                ("spending_rows", "12"),
+                ("category_rows", "1"),
+                ("spending_rows", "1"),
                 ("action", "add_spending"),
             ]
         )
         status, _, page = self.post_form(fields)
         self.assertEqual(status, 200)
-        self.assertIn('name="spending_date_13"', page)
-        self.assertNotIn('name="spending_date_14"', page)
-        self.assertIn('name="spending_rows" value="13"', page)
+        self.assertIn('name="spending_date_2"', page)
+        self.assertNotIn('name="spending_date_3"', page)
+        self.assertIn('name="spending_rows" value="2"', page)
         self.assertIn('value="Amina"', page)
-        self.assertIn('value="Notebook"', page)
-        self.assertIn("13 of 100 spending rows", page)
+        self.assertIn('value="October rent"', page)
+        self.assertIn("2 of 100 spending rows", page)
         self.assertEqual(self.plan_files(), set())
 
     def test_extra_category_rows_are_saved(self) -> None:
@@ -1163,7 +1171,7 @@ class MoneyPlanTests(unittest.TestCase):
             categories=categories,
             spendings=(("2026-10-01", "Category 1", "10", "Tea"),),
         )
-        fields.extend([("category_rows", "13"), ("spending_rows", "24")])
+        fields.extend([("category_rows", "13"), ("spending_rows", "1")])
         plan_id = self.create_plan(fields)
 
         _, _, page = self.fetch(f"/plan?plan={plan_id}")
@@ -1178,7 +1186,7 @@ class MoneyPlanTests(unittest.TestCase):
         fields = self.plan_fields()
         fields.extend(
             [
-                ("category_rows", "12"),
+                ("category_rows", "1"),
                 ("spending_rows", "100"),
                 ("action", "add_spending"),
             ]
@@ -1220,7 +1228,7 @@ class MoneyPlanTests(unittest.TestCase):
         fields.extend(
             [
                 ("category_rows", "100"),
-                ("spending_rows", "24"),
+                ("spending_rows", "1"),
                 ("action", "add_category"),
             ]
         )
