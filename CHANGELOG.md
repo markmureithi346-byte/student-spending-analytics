@@ -4,6 +4,57 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-10-26
+
+Adds an interactive, read-only dashboard over the existing warehouse. The report and
+dashboard now share one visual theme and one set of HTML formatting helpers.
+
+### Added
+
+- `student-spending serve` starts a dependency-free dashboard on
+  `http://127.0.0.1:8000`, with `--host`, `--port`, `--db` and `--open`.
+- Filters for date window, student, category, payment method, flagged-only, merchant or
+  description search, sort order and page size. Filters combine, are expressed as GET
+  fields, and produce bookmarkable URLs.
+- A filtered summary with total spend, transaction and student counts, average
+  transaction and average daily spend, plus a transaction table with pagination,
+  monthly trend chart, category/merchant/payment breakdown and a flagged-only shortcut.
+- CSV export that respects the active filters, carries a date-scoped filename and
+  neutralises spreadsheet-formula prefixes.
+- Read-only warehouse access (`mode=ro` plus `PRAGMA query_only = ON`), short-lived
+  per-request connections, loopback binding by default, a restrictive CSP and
+  no-store/no-referrer/nosniff headers.
+- Input validation with field-level messages and safe resets for invalid dates, unknown
+  students/categories/payment methods, tampered sort values, oversized search terms and
+  out-of-range pages.
+- Shared `theme.py` and `components.py`, used by both the report and the dashboard.
+- Twenty dashboard tests covering filter semantics against hand-written SQL, literal
+  `%`/`_` search, injection attempts, pagination clamping, HTML escaping, CSV guards,
+  routing, security headers, read-only enforcement and CLI dispatch.
+- Dashboard screenshots at desktop and phone widths in `docs/images/`.
+
+### Changed
+
+- The CLI gained an optional `serve` subcommand; pipeline flags and exit codes are
+  unchanged, and root options still work.
+- Release version is now `1.1.0`.
+- README, learning log and test counts document the dashboard, its security model and
+  its limitations.
+
+### Fixed
+
+- Search treated user-supplied `%` and `_` as SQL wildcards; both are now escaped and
+  matched literally.
+- Summary wording read "1 transactions from 1 students total …"; singular and plural
+  verbs now agree.
+- The two breakdown tables clipped their headers at desktop width because the global
+  table minimum width exceeded each grid column; the split layout now uses its own
+  smaller minimum.
+- The favicon response sent a `204` status with a `Content-Length` header, which is not
+  a valid no-content response.
+- Unexpected handler exceptions now return a styled `500` page and are logged instead
+  of dropping the connection.
+
 ## [1.0.0] - 2026-10-26
 
 First complete release: a packaged, tested pipeline that runs from raw CSV to a

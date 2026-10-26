@@ -14,12 +14,13 @@ useful to whoever maintains this project next — including future me.
 | 4. Database design and loading | done | 8 tables, 12 views, PK/FK/CHECK, upsert loading |
 | 5. SQL analytics | done | monthly, category, weekday, budget, week-over-week queries |
 | 6. Analytical modelling | done | fact/dimension split, single grain per view |
-| 7. Quality and testing | done | 12 checks, 61 tests |
+| 7. Quality and testing | done | 12 checks; the suite grew to 81 tests by phase 13 |
 | 8. Logging and repeatability | done | console + file logging, run table, idempotent rerun |
 | 9. Visualisation | done | dependency-free HTML report from SQL |
 | 10. Documentation | done | README, data dictionary, quality policy, examples |
 | 11. Packaging and release | done | `pyproject.toml`, console script, wheel build, CI matrix, MIT licence |
 | 12. Report experience | done | animated purple theme, sticky nav, responsive stacked tables, refreshed screenshots |
+| 13. Interactive dashboard | done | `web.py`, `student-spending serve`, 20 dashboard tests, browser-checked at 1280 px and 390 px |
 
 ## Decisions worth remembering
 
@@ -52,6 +53,26 @@ useful to whoever maintains this project next — including future me.
   charts. Below 640 px each table row becomes a labelled card: horizontal scrolling hid
   columns entirely on a phone. Animation is CSS-only and switches off for
   `prefers-reduced-motion`; the print stylesheet drops the backdrop and chrome.
+- **The dashboard is a viewer, not a second pipeline.** It imports the same formatting
+  helpers, opens the same warehouse read-only and queries the same views. Nothing is
+  computed in Python except display strings and booleans. Separating it from the batch
+  job keeps one source of truth and means a dashboard bug cannot corrupt data.
+- **GET forms instead of a JavaScript app.** The whole state lives in the URL, so a
+  filtered view can be bookmarked, reloaded, tested with plain HTTP and downloaded as
+  CSV without duplicating logic. The trade-off is a full page load per Apply, which is
+  acceptable for a local single-user tool and keeps the no-dependency constraint.
+- **Untrusted input never becomes SQL text.** Dates are parsed, students/categories/
+  payment methods come from allow-lists, ordering comes from a fixed dictionary and the
+  search term is a bound `LIKE` pattern with `ESCAPE '\'`. Values that fail validation
+  reset to the safe default and the field explains why.
+- **Two independent read-only layers.** The SQLite URI includes `mode=ro` and every
+  connection also runs `PRAGMA query_only = ON`. Tests attempt writes through the same
+  connection factory; both layers would have to fail for a handler to modify data.
+- **Browser verification is part of "done".** The dashboard was checked in headless
+  Chrome at 1280 px and 390 px: no horizontal overflow, full-width mobile controls,
+  correct stacked labels, sticky navigation, reduced-motion behaviour and an empty
+  console. Rendering bugs (grammar, clipped headers, dead grid space) only appeared in
+  the screenshots, not in the unit tests.
 
 ## Bugs hit during development
 
@@ -110,6 +131,44 @@ useful to whoever maintains this project next — including future me.
    *Lesson:* a mobile layout has to be tested at a real phone width; a min-width plus
    overflow rule is not a responsive design.
 
+9. **Search turned `%` and `_` into wildcards.** A query for `50%` matched any merchant
+   starting with `50`, and `_` matched any single character.
+   *Cause:* the term was bound as a parameter, which prevents injection but not
+   wildcard expansion inside `LIKE`.
+   *Fix:* escape `\`, `%` and `_` in the term and add `ESCAPE '\'` to both columns.
+   *Lesson:* parameterisation stops SQL injection; it does not make pattern syntax safe.
+
+10. **The browser check filtered on a fixture-only merchant.** The script searched for
+    a name that exists only in `tests/test_web.py`, so the live page returned the empty
+    state, `.resultbar` was `null`, and the script crashed.
+    *Fix:* inspect the committed warehouse and use a merchant that is actually there
+    (`Tech Repairs Nairobi`), then assert the row and amount.
+    *Lesson:* verification scripts run against real data, not the test fixture.
+
+11. **Summary grammar broke at one row.** The filtered page said "1 transactions from
+    1 students total …" and "1 transaction are flagged".
+    *Fix:* a `_plural` helper and verb agreement chosen from the count; the browser check
+    now asserts the sentence for a single result.
+    *Lesson:* empty and single-row states are where template wording fails.
+
+12. **Split tables clipped their headers.** A global `min-width: 520px` on tables was
+    wider than each half of a two-column breakdown, so `TOTAL KES` was cut off and the
+    tables looked misaligned.
+    *Fix:* give `.split table` its own `min-width: 0` and tighter cell padding.
+    *Lesson:* global layout rules need an escape hatch for nested components.
+
+13. **The favicon response was an invalid 204.** It sent `204 No Content` together with
+    `Content-Length`, which contradicts the status.
+    *Fix:* send only the status and no-store header for the favicon; keep the body and
+    length on real pages.
+    *Lesson:* no-content responses must not describe a body.
+
+14. **Apply/Reset left a dead column in the filter grid.** Search spanned two columns and
+    the buttons sat in a separate row, producing a visible gap at desktop width.
+    *Fix:* place the actions in the same grid row with `align-self: end`, then override
+    the span below 900 px and 640 px.
+    *Lesson:* grid spans have to be re-checked at every breakpoint, not just the widest.
+
 ## Concepts this project exercises
 
 Extraction boundaries; per-row error isolation; normalisation vs validation; policy for
@@ -117,7 +176,10 @@ duplicates; surrogate vs natural keys; fact/dimension grain; composite primary k
 foreign keys and CHECK constraints; transactions; upsert and change detection; hashing
 for idempotency; CASE expressions; joins; CTEs; window functions (`LAG`, and window
 aggregates via SQLite); reconciliation accounting; logging levels; test doubles; HTML
-escaping; and the difference between "valid" and "unusual".
+escaping; HTTP request/response handling; server-side rendering; GET form state;
+threaded request handling; read-only database connections; `LIKE` escaping; content
+security policy; CSV formula injection; and the difference between "valid" and
+"unusual".
 
 ## Next exercises (for the learner, not the pipeline)
 
@@ -129,9 +191,17 @@ escaping; and the difference between "valid" and "unusual".
 4. Extend the report with a weekly chart built from `v_weekly_spending`.
 5. Add a `source_file_hash` column to `pipeline_runs` so identical reruns can be
    recognised before any loading happens.
+6. Add a JSON endpoint that reuses `parse_filters` and `build_where`, then assert it
+   returns the same totals as the HTML summary for the same URL.
+7. Add a saved-view feature without putting user text into SQL: store only validated
+   filter values and rebuild the query on load.
 
 ## Open questions
 
 - Should quarantined rows have a resolution workflow (status + reviewer + note)?
 - Should corrected records be linked to the run that superseded them?
 - Is a calendar-week grain enough, or is a real date dimension needed for reporting?
+- Should the dashboard remember a preferred date range, and if so, where — URL, cookie
+  or warehouse table?
+- If this ever held real data, what authentication and access logging would be required
+  before any route left loopback?

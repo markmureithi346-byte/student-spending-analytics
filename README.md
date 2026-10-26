@@ -2,7 +2,7 @@
 
 A local data engineering pipeline that turns raw, deliberately messy student expense
 records into a validated SQLite warehouse, reproducible analytics, automated data
-quality checks and an HTML report.
+quality checks, an HTML report and a filterable read-only dashboard.
 
 Built as a learning project: the code is intentionally module-by-module and documented
 so the reasoning behind each stage is visible.
@@ -40,8 +40,12 @@ data/raw/*.csv
       │
       ├── quality.py      12 automated checks, including reconciliation
       │
-      └── report.py       reports/spending_report.html (charts + tables from SQL)
+      ├── report.py       reports/spending_report.html (charts + tables from SQL)
+      │
+      └── web.py          student-spending serve → interactive read-only dashboard
 ```
+
+The report and the dashboard read the same SQL views; neither computes its own totals.
 
 Every row read from the CSV must be accounted for:
 
@@ -75,8 +79,9 @@ virtual environment.
 ```powershell
 python scripts\generate_synthetic_data.py     # writes data/raw/*.csv
 student-spending --full-refresh               # deletes the warehouse, then rebuilds it
-python run_tests.py                           # 61 tests
+python run_tests.py                           # 81 tests
 start reports\spending_report.html
+student-spending serve --open                 # dashboard; blocks until Ctrl+C
 ```
 
 Omit `--full-refresh` to rerun against the existing warehouse. Because loading is
@@ -92,6 +97,8 @@ and `warehouse/` paths resolve.
 ```
 student-spending [--transactions PATH] [--profiles PATH] [--budgets PATH]
                  [--db PATH] [--full-refresh] [--log-level LEVEL]
+
+student-spending serve [--db PATH] [--host ADDR] [--port N] [--open]
 ```
 
 | Option | Default | Purpose |
@@ -106,6 +113,18 @@ student-spending [--transactions PATH] [--profiles PATH] [--budgets PATH]
 Exit codes: `0` success, `1` a data quality check failed, `2` a pipeline error
 (missing or invalid input), `3` an unexpected error. Every code is exercised by
 the integration tests. The full run log is also written to `logs/pipeline.log`.
+
+### Dashboard options
+
+| Option | Default | Purpose |
+|---|---|---|
+| `--db` | `warehouse/student_spending.db` | warehouse to read (must already exist) |
+| `--host` | `127.0.0.1` | bind address; loopback keeps the dashboard local |
+| `--port` | `8000` | port to bind; use `0` to pick a free port |
+| `--open` | off | open the dashboard in the default browser |
+
+`serve` refuses to start when the warehouse is missing, unreadable or empty, and
+prints the rebuild command instead of serving a broken page. Stop it with Ctrl+C.
 
 ## What a run produces (verified output of this repository)
 
@@ -185,17 +204,60 @@ These are valid transactions, not errors. They are flagged and kept.
 Every rejected or quarantined row is written to
 `data/quarantine/rejections_<run_id>.csv` and to the warehouse audit tables.
 
+## Dashboard
+
+![Dashboard overview](docs/images/dashboard-overview.png)
+
+The interactive surface is a local, read-only explorer over the same warehouse:
+
+```powershell
+student-spending serve --open
+```
+
+![Dashboard summary](docs/images/dashboard-summary.png)
+
+Every control is an ordinary GET form field, so the page needs no JavaScript and
+each view has a bookmarkable URL. Applying a filter runs a new parameterised query
+and updates the summary, transaction table, monthly trend and breakdown together.
+
+| Control | What it changes |
+|---|---|
+| start / end date | restricts `transaction_date`; the summary reports the covered day span |
+| student / category / payment | optional allow-listed equality filters |
+| review status | all transactions, or only rows flagged for review |
+| search | case-insensitive `LIKE` over merchant and description, with `%` and `_` matched literally |
+| sort | newest, oldest, largest or smallest; the column list is fixed in code |
+| rows per page | 25, 50 or 100, with previous/next links and a clamped page number |
+
+The result bar states exactly what matched, the CSV button downloads only those rows,
+and a shortcut shows the flagged rows directly. Invalid values (an impossible date, an
+unknown student, a tampered sort) are rejected field by field with a visible message
+rather than crashing the page or being passed through to SQL.
+
+The server binds to `127.0.0.1` by default, opens SQLite with `mode=ro` **and**
+`PRAGMA query_only = ON`, and opens a short-lived connection per request. It sends a
+restrictive Content-Security-Policy, `nosniff`, `no-store` and `no-referrer` headers,
+escapes all database text into HTML, and prefixes spreadsheet-formula characters in CSV
+exports. It has no upload, login or write endpoint, and serves no arbitrary files.
+
+![Dashboard at phone width](docs/images/dashboard-mobile.png)
+
+At phone width the controls stack and the tables become labelled cards, so no column is
+hidden off-screen. The purple backdrop, reduced-motion handling and print styles are
+shared with the report through `theme.py`.
+
 ## Report
 
 ![Report overview](docs/images/report-overview.png)
 
 ![Category chart](docs/images/report-category-chart.png)
 
-The report is regenerated from SQL on every run; no figure is hard-coded. It is a
-single self-contained file: an animated purple backdrop, sticky section navigation,
-KPI cards, gradient SVG charts and share bars. On narrow screens tables become
-labelled cards instead of hiding columns behind a scrollbar. Animations are disabled
-under `prefers-reduced-motion`, and the page includes print styles.
+The report and dashboard are regenerated from SQL on every request/run; no figure is
+hard-coded. The report is a single self-contained file: an animated purple backdrop,
+sticky section navigation, KPI cards, gradient SVG charts and share bars. On narrow
+screens tables become labelled cards instead of hiding columns behind a scrollbar.
+Animations are disabled under `prefers-reduced-motion`, and the page includes print
+styles.
 
 ## Project layout
 
@@ -210,8 +272,8 @@ student-spending-analytics/
 ├── reports/                  generated HTML report (git-ignored)
 ├── scripts/                  generate_synthetic_data.py, check_env.py
 ├── sql/                      schema.sql, example_queries.sql
-├── src/student_spending/     pipeline package (entry points: __main__.py, cli.py)
-├── tests/                    61 unittest cases
+├── src/student_spending/     pipeline, report, shared UI and dashboard modules
+├── tests/                    81 unittest cases
 ├── warehouse/                generated SQLite database (git-ignored)
 ├── logs/                     pipeline.log (git-ignored)
 ├── pyproject.toml            package metadata, console script, build config
@@ -294,10 +356,14 @@ python run_tests.py
 python -m unittest discover -s tests -t . -v
 ```
 
-61 tests covering: extraction failures and malformed rows, every validation rule,
+81 tests covering: extraction failures and malformed rows, every validation rule,
 normalisation, duplicate handling, reconciliation accounting, idempotent loading,
 foreign keys and CHECK constraints, analytics totals and shares, anomaly flagging,
-all quality checks, and an end-to-end pipeline run including rerun behaviour.
+all quality checks, an end-to-end pipeline run including rerun behaviour, and the
+dashboard: filter composition against hand-written SQL, literal wildcard and injection
+attempts, sort/date/allow-list validation, pagination clamping, HTML escaping, CSV
+formula guards, report routing, security headers, read-only enforcement and CLI
+dispatch.
 
 ## Design decisions
 
@@ -311,6 +377,10 @@ all quality checks, and an end-to-end pipeline run including rerun behaviour.
 | Quarantine table + CSV | Auditable and reviewable; nothing vanishes silently |
 | Validity vs anomaly separated | A large purchase is legitimate but interesting; conflating the two loses data |
 | HTML report with inline SVG | Dependency-free, self-contained, and reads only from the database |
+| Dashboard on `http.server`, no framework | A read-only explorer needs routing, HTML and SQL, all of which the standard library provides; filters stay as bookmarkable GET state |
+| Read-only SQLite URI plus `query_only` | The dashboard cannot accidentally write, even if a handler is wrong; each request gets its own short-lived connection |
+| Fixed sort and filter allow-lists | Untrusted input never becomes SQL text; `LIKE` wildcards are escaped and ordering is chosen from a dict |
+| Shared `theme.py` and `components.py` | The report and dashboard use one visual language and one set of escaping/format helpers, so fixes apply to both |
 | Editable install with a console script | One command to run the pipeline; the `src/` layout also prevents tests from importing the package by accident |
 | CI runs the pipeline twice | Proves idempotency on a clean machine, not just in a local wrapper |
 
@@ -337,6 +407,10 @@ external services.
   handling beyond upsert.
 - The anomaly rule is a documented heuristic, not a statistical outlier model.
 - Quarantine records accumulate per run; there is no resolution UI or "cleared" state.
+- The dashboard is single-user and loopback-only. It has no login, saved views or
+  concurrent-writer coordination; it is a viewer for a batch-built warehouse.
+- Dashboard filters are applied on submit rather than live-updating, and search is a
+  substring match over two text columns, not a ranked full-text search.
 - No authentication or encryption. That is acceptable only because the data is fake;
   real financial data would require both.
 
@@ -346,7 +420,7 @@ external services.
 - Resolve quarantined rows through a reviewed fixes file with lineage back to the run.
 - dbt-style transformation tests or a data quality framework once the SQL grows.
 - Postgres or DuckDB when data outgrows a single SQLite file.
-- Optional Streamlit dashboard on top of the same views.
+- Add saved filter views and a small JSON endpoint over the same validated filters.
 - Publish tagged releases once the input contract has stayed stable across a few runs.
 
 ## Project log

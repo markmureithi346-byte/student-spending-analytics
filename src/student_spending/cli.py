@@ -180,10 +180,22 @@ def _mark_failed(connection: sqlite3.Connection, run_id: str, message: str) -> N
         logger.exception("could not record the failed run in pipeline_runs")
 
 
+def _port(value: str) -> int:
+    try:
+        port = int(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("port must be a whole number") from error
+    if not 0 <= port <= 65535:
+        raise argparse.ArgumentTypeError("port must be between 0 and 65535")
+    return port
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="student-spending",
-        description="Run the Student Spending Analytics pipeline end to end.",
+        description="Run the Student Spending Analytics pipeline end to end, or "
+        "explore the warehouse in a browser.",
+        epilog="Run 'student-spending serve' to start the interactive dashboard.",
     )
     parser.add_argument(
         "--version",
@@ -225,12 +237,51 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
         help="console log level (default: INFO)",
     )
+    commands = parser.add_subparsers(dest="command", metavar="command")
+    serve_parser = commands.add_parser(
+        "serve",
+        help="start the interactive read-only dashboard",
+        description="Serve the filtered dashboard on the local machine. The warehouse "
+        "is opened read-only and no input is stored.",
+    )
+    serve_parser.add_argument(
+        "--db",
+        type=Path,
+        default=argparse.SUPPRESS,
+        help="SQLite warehouse path (default: warehouse/student_spending.db)",
+    )
+    serve_parser.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="interface to bind (default: 127.0.0.1, loopback only)",
+    )
+    serve_parser.add_argument(
+        "--port",
+        type=_port,
+        default=8000,
+        help="port to bind; 0 picks a free port (default: 8000)",
+    )
+    serve_parser.add_argument(
+        "--open",
+        action="store_true",
+        dest="open_browser",
+        help="open the dashboard in the default browser",
+    )
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     arguments = build_parser().parse_args(argv)
     logging_setup.configure(arguments.log_level)
+    if getattr(arguments, "command", None) == "serve":
+        from . import web
+
+        return web.serve(
+            arguments.db,
+            host=arguments.host,
+            port=arguments.port,
+            open_browser=arguments.open_browser,
+        )
     options = PipelineOptions(
         transactions_csv=arguments.transactions,
         profiles_csv=arguments.profiles,
