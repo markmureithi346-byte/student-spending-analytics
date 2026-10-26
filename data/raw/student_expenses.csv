@@ -1,0 +1,381 @@
+transaction_id,student_id,transaction_date,amount_kes,category,description,payment_method,merchant,is_recurring
+TXN-0200,STU-004,2026-08-16,921.86,Food,Groceries,Cash,Campus Cafeteria,false
+TXN-0108,STU-002,2026-09-20,802.01,Food,Dinner,Card,Mama Oliech Kitchen,false
+TXN-0191,STU-004,2026-07-16,838.72,Entertainment,Game purchase,M-Pesa,Steam,false
+TXN-0169,STU-003,2026-09-10,482.96,Transport,Shuttle ticket,M-Pesa,Uber,false
+TXN-0298,STU-006,2026-07-10,787.06,Food,Dinner,M-Pesa,Quickmart,false
+TXN-0093,STU-002,2026-08-24,593.03,Transport,Fuel top-up,Cash,Campus Shuttle,false
+TXN-0080,STU-002,2026-08-20,4299.20,Education,Printing and binding,Card,Printing Hub,false
+TXN-0022,STU-001,2026-08-11,2274.74,Education,Online course,Bank Transfer,Faculty Fees Office,false
+TXN-0159,STU-003,2026-09-27,1496.63,Education,Textbook,Card,Stationery Mart,false
+TXN-0049,STU-001,2026-09-26,839.08,Food,Dinner,M-Pesa,Campus Cafeteria,false
+TXN-0053,STU-001,2026-09-13,81.23,Transport,Shuttle ticket,Cash,Campus Shuttle,false
+TXN-0318,STU-006,2026-08-13,273.40,Food,Groceries,M-Pesa,Chicken Inn,false
+TXN-0096,STU-002,2026-08-13,902.73,Personal Care,,Cash,Naivas Pharmacy,false
+TXN-0217,STU-004,2026-09-05,638.65,Airtime and Internet,Data bundle,M-Pesa,Zuku,true
+TXN-0225,STU-004,2026-09-03,598.49,Transport,Uber ride,Cash,Uber,false
+TXN-0309,STU-006,2026-07-09,1346.11,Personal Care,corrected entry,Cash,Supercuts Salon,false
+TXN-0339,STU-006,2026-09-14,151.25,Food,Chapati and beans,M-Pesa,Mama Oliech Kitchen,false
+TXN-0329,STU-006,2026-08-02,736.10,Personal Care,Toiletries,M-Pesa,Barber Hub,false
+TXN-0166,STU-003,2026-09-07,361.72,Food,Lunch at campus,M-Pesa,Java House,false
+TXN-0248,STU-005,2026-07-04,456.80,Transport,Matatu fare,M-Pesa,Matatu Route 46,false
+TXN-0342,STU-006,2026-09-02,442.33,Transport,Uber ride,Cash,Matatu Route 46,false
+TXN-0103,STU-002,2026-09-20,1374.75,Airtime and Internet,Wifi subscription,M-Pesa,Jamii Telecom,false
+TXN-0115,STU-002,2026-09-07,1899.20,Entertainment,Concert ticket,M-Pesa,Steam,false
+TXN-0007,STU-001,2026-07-11,372.30,Food,Groceries,Cash,Campus Cafeteria,false
+TXN-0265,STU-005,2026-08-14,281.55,Transport,Shuttle ticket,M-Pesa,Bolt,false
+TXN-0180,STU-004,2026-07-15,1343.51,Airtime and Internet,Data bundle,M-Pesa,Jamii Telecom,false
+TXN-9801,STU-001,2026-08-14,850.00,Food,Lunch, and snacks,M-Pesa,Java House,false
+TXN-0004,STU-001,2026-07-20,1277.47,Education,Printing and binding,M-Pesa,University Bookshop,false
+TXN-0051,STU-001,2026-09-30,752.85,Food,Groceries,M-Pesa,Kwa Mali,false
+TXN-9006,STU-002,2026-08-14,-250.00,Food,Lunch at campus,M-Pesa,Campus Cafeteria,false
+TXN-0130,STU-003,2026-07-23,226.06,Transport,Uber ride,M-Pesa,Total Petrol Station,false
+TXN-0086,STU-002,2026-08-04,851.63,Food,Chapati and beans,M-Pesa,Mama Oliech Kitchen,false
+TXN-0029,STU-001,2026-08-10,497.81,Food,Coffee,M-Pesa,Chicken Inn,false
+TXN-0006,STU-001,2026-07-21,1048.19,Airtime and Internet,Airtime top-up,M-Pesa,Jamii Telecom,false
+TXN-0182,STU-004,2026-07-03,401.61,Food,Chapati and beans,M-Pesa,Kwa Mali,false
+TXN-0330,STU-006,2026-09-01,9000.00,Rent,Room rent,Bank Transfer,Nyayo Hostels,true
+TXN-0350,STU-003,2026-08-12,24000.00,Education,Laptop repair,M-Pesa,Tech Repairs Nairobi,false
+TXN-0340,STU-006,2026-09-14,299.85,Food,Snacks,M-Pesa,Mama Oliech Kitchen,false
+TXN-0155,STU-003,2026-08-10,315.56,Personal Care,Pharmacy,Cash,Supercuts Salon,false
+TXN-0272,STU-005,2026-09-01,10500.00,Rent,Monthly hostel rent,Bank Transfer,Nyayo Hostels,true
+TXN-0341,STU-006,2026-09-12,204.14,Food,Dinner,M-Pesa,Kwa Mali,false
+TXN-0278,STU-005,2026-09-14,238.71,Food,Snacks,Card,Mama Oliech Kitchen,false
+TXN-0030,STU-001,2026-08-29,725.74,Food,Dinner,M-Pesa,Mama Oliech Kitchen,false
+TXN-0131,STU-003,2026-07-20,629.33,Transport,Matatu fare,M-Pesa,Bolt,false
+TXN-0120,STU-003,2026-07-27,3590.81,Education,Online course,Bank Transfer,University Bookshop,false
+TXN-0321,STU-006,2026-08-18,341.33,Food,Market run,Card,Java House,false
+TXN-0242,STU-005,2026-07-13,370.71,Food,Lunch at campus,Card,Campus Cafeteria,false
+TXN-0110,STU-002,2026-09-25,220.93,Transport,Uber ride,Cash,Uber,false
+TXN-0134,STU-003,2026-07-28,1052.68,Personal Care,Haircut,Card,Supercuts Salon,false
+TXN-0239,STU-005,2026-07-14,901.24,Food,Chapati and beans,M-Pesa,Chicken Inn,false
+TXN-0019,STU-001,2026-07-26,647.00,Personal Care,Toiletries,M-Pesa,Chemist Warehouse,false
+TXN-0152,STU-003,2026-08-04,503.44,Transport,Bolt ride,M-Pesa,Uber,false
+TXN-0067,STU-002,2026-07-04,901.14,Food,Groceries,Cash,Campus Cafeteria,false
+TXN-0139,STU-003,2026-08-27,2408.67,Education,Online course,Card,Faculty Fees Office,false
+TXN-0303,STU-006,2026-07-11,424.85,Transport,Fuel top-up,M-Pesa,Matatu Route 46,false
+TXN-0349,STU-006,2026-09-25,635.18,Other,Club contribution,Cash,Gift Shop,false
+TXN-0153,STU-003,2026-08-09,1704.25,Entertainment,Game purchase,Card,Westgate Cinema,false
+TXN-0218,STU-004,2026-09-18,424.13,Airtime and Internet,Wifi subscription,M-Pesa,Zuku,false
+TXN-0132,STU-003,2026-07-04,409.85,Transport,Uber ride,Cash,Campus Shuttle,false
+TXN-9004,STU-002,2026-02-30,480.00,Food,Lunch at campus,M-Pesa,Campus Cafeteria,false
+TXN-0099,STU-002,2026-09-04,1769.00,Utilities,Hostel utilities,M-Pesa,Campus Utilities,true
+TXN-0156,STU-003,2026-09-01,15000.00,Rent,Room rent,Bank Transfer,Campus Bedsitters,true
+TXN-0328,STU-006,2026-08-27,1212.03,Entertainment,Music subscription,M-Pesa,Steam,false
+TXN-0040,STU-001,2026-09-01,11000.00,Rent,Monthly hostel rent,Bank Transfer,Nyayo Hostels,true
+TXN-0232,STU-005,2026-07-01,10500.00,Rent,Room rent,Bank Transfer,Campus Bedsitters,true
+TXN-0289,STU-005,2026-09-08,1184.22,Entertainment,Concert ticket,M-Pesa,Steam,false
+TXN-0008,STU-001,2026-07-03,453.94,Food,Chapati and beans,Cash,Mama Oliech Kitchen,false
+TXN-0267,STU-005,2026-08-22,354.85,Transport,Matatu fare,Cash,Total Petrol Station,false
+TXN-9009,STU-002,2026-08-14,480.00,Crypto,Lunch at campus,M-Pesa,Campus Cafeteria,false
+TXN-0258,STU-005,2026-08-22,1065.97,Airtime and Internet,Airtime top-up,M-Pesa,Airtel,false
+TXN-0101,STU-002,2026-09-23,2949.27,Education,Printing and binding,M-Pesa,Printing Hub,false
+TXN-0039,STU-001,2026-08-08,198.02,Other,Gift,M-Pesa,Campus Fundraiser,false
+TXN-0116,STU-002,2026-09-16,306.49,Personal Care,Toiletries,Cash,Barber Hub,false
+TXN-0113,STU-002,2026-09-05,211.82,Transport,Bolt ride,M-Pesa,Matatu Route 46,false
+TXN-0163,STU-003,2026-09-13,510.41,Food,Coffee,Cash,Mama Oliech Kitchen,false
+TXN-0031,STU-001,2026-08-30,235.13,Food,Snacks,Cash,Chicken Inn,false
+TXN-0216,STU-004,2026-09-24,2387.77,Education,Lab materials,M-Pesa,Stationery Mart,false
+TXN-0034,STU-001,2026-08-08,113.02,Transport,Fuel top-up,M-Pesa,Matatu Route 46,false
+TXN-0001,STU-001,2026-07-01,11000.00,Rent,Monthly hostel rent,Bank Transfer,Campus Bedsitters,true
+TXN-0268,STU-005,2026-08-12,145.48,Transport,Uber ride,M-Pesa,Campus Shuttle,false
+TXN-0230,STU-004,2026-09-03,1169.75,Personal Care,Haircut,Cash,Supercuts Salon,false
+TXN-0167,STU-003,2026-09-06,591.59,Food,Groceries,M-Pesa,Kwa Mali,false
+TXN-0312,STU-006,2026-08-06,1993.94,Utilities,Water bill,M-Pesa,Campus Utilities,true
+TXN-0285,STU-005,2026-09-30,124.38,Transport,Uber ride,Cash,Total Petrol Station,false
+TXN-0222,STU-004,2026-09-09,692.21,Food,Snacks,M-Pesa,Chicken Inn,false
+TXN-0228,STU-004,2026-09-26,248.23,Transport,Uber ride,M-Pesa,Campus Shuttle,false
+TXN-9010,STU-002,2026-08-14,480.00,Uncategorised,Lunch at campus,M-Pesa,Campus Cafeteria,false
+TXN-0042,STU-001,2026-09-15,2609.22,Education,Tuition instalment,M-Pesa,Printing Hub,false
+TXN-0179,STU-004,2026-07-02,1111.01,Airtime and Internet,Data bundle,M-Pesa,Zuku,true
+TXN-0205,STU-004,2026-08-28,576.90,Food,Chapati and beans,mpesa,Mama Oliech Kitchen,false
+TXN-0326,STU-006,2026-08-28,151.07,Transport,Matatu fare,M-Pesa,Bolt,false
+TXN-0291,STU-006,2026-07-01,9000.00,Rent,Monthly hostel rent,Bank Transfer,Campus Bedsitters,true
+TXN-0079,STU-002,2026-08-03,1204.91,Utilities,Water bill,Bank Transfer,Campus Utilities,true
+TXN-0213,STU-004,2026-09-01,12500.00,Rent,Room rent,Bank Transfer,Sunrise Apartments,true
+TXN-0112,STU-002,2026-09-11,262.23,Transport,Fuel top-up,M-Pesa,Uber,false
+TXN-0087,STU-002,2026-08-31,936.84,Food,Lunch at campus,M-Pesa,Mama Oliech Kitchen,false
+TXN-0073,STU-002,2026-07-18,482.23,Transport,Fuel top-up,M-Pesa,Matatu Route 46,false
+TXN-0311,STU-006,2026-08-01,9000.00,Rent,Monthly hostel rent,M-Pesa,Campus Bedsitters,true
+TXN-0044,STU-001,2026-09-02,626.01,Airtime and Internet,Data bundle,M-Pesa,Jamii Telecom,true
+TXN-0095,STU-002,2026-08-14,1596.87,Entertainment,Concert ticket,M-Pesa,Spotify,false
+TXN-0327,STU-006,2026-08-15,596.02,Transport,Bolt ride,Cash,Matatu Route 46,false
+TXN-0304,STU-006,2026-07-15,139.00,Transport,Uber ride,M-Pesa,Total Petrol Station,false
+TXN-0092,STU-002,2026-08-03,620.86,Transport,Uber ride,Cash,Matatu Route 46,false
+TXN-0033,STU-001,2026-08-11,358.51,Transport,Matatu fare,Cash,Bolt,false
+TXN-0150,STU-003,2026-08-24,393.72,Transport,Uber ride,Cash,Bolt,false
+TXN-9802,STU-002,2026-08-15,1200.00,Food,Lunch
+TXN-0094,STU-002,2026-08-13,1654.98,Entertainment,Game purchase,M-Pesa,Nairobi Sports Club,false
+TXN-0184,STU-004,2026-07-02,300.07,Food,Chapati and beans,Card,Chicken Inn,false
+TXN-9003,STU-002,not-a-date,480.00,Food,Lunch at campus,M-Pesa,Campus Cafeteria,false
+TXN-0015,STU-001,2026-07-12,199.42,Transport,Uber ride,M-Pesa,Total Petrol Station,false
+TXN-0104,STU-002,2026-09-16,469.72,Food,Groceries,M-Pesa,Campus Cafeteria,false
+TXN-9001,STU-002,2026-13-05,480.00,Food,Lunch at campus,M-Pesa,Campus Cafeteria,false
+TXN-0035,STU-001,2026-08-24,357.01,Transport,Matatu fare,M-Pesa,Uber,false
+TXN-0142,STU-003,2026-08-01,545.45,Food,Chapati and beans,M-Pesa,Kwa Mali,false
+TXN-0065,STU-002,2026-07-06,500.55,Food,Dinner,Cash,Mama Oliech Kitchen,false
+TXN-0109,STU-002,2026-09-15,867.77,Food,Snacks,Card,Kwa Mali,false
+TXN-0018,STU-001,2026-07-27,1782.96,Entertainment,Cinema ticket,M-Pesa,Westgate Cinema,false
+TXN-0204,STU-004,2026-08-23,467.99,Food,Lunch at campus,Cash,Chicken Inn,false
+TXN-0323,STU-006,2026-08-25,297.67,Transport,Fuel top-up,Cash,Uber,false
+TXN-0219,STU-004,2026-09-01,602.74,Food,Snacks,M-Pesa,Mama Oliech Kitchen,false
+TXN-0172,STU-003,2026-09-03,113.99,Transport,Uber ride,Cash,Campus Shuttle,false
+TXN-0146,STU-003,2026-08-18,756.53,Food,Snacks,Card,Chicken Inn,false
+TXN-0059,STU-002,2026-07-01,9500.00,Rent,Room rent,M-Pesa,Sunrise Apartments,true
+TXN-0037,STU-001,2026-08-30,1370.73,Entertainment,Football match,Card,Steam,false
+TXN-0043,STU-001,2026-09-27,1831.79,Education,Tuition instalment,Card,Printing Hub,false
+TXN-0203,STU-004,2026-08-16,775.22,Food,Chapati and beans,Cash,Mama Oliech Kitchen,false
+TXN-0119,STU-003,2026-07-12,4074.17,Education,Tuition instalment,Bank Transfer,Printing Hub,false
+TXN-0238,STU-005,2026-07-29,481.91,Food,Lunch at campus,Card,Mama Oliech Kitchen,false
+TXN-0210,STU-004,2026-08-08,1356.10,Entertainment,Game purchase,M-Pesa,Nairobi Sports Club,false
+TXN-0003,STU-001,2026-07-18,4833.41,Education,Textbook,Bank Transfer,Stationery Mart,false
+TXN-0293,STU-006,2026-07-20,3994.51,Education,Printing and binding,M-Pesa,University Bookshop,false
+TXN-0271,STU-005,2026-08-28,257.44,Other,Miscellaneous,Cash,Gift Shop,false
+TXN-0048,STU-001,2026-09-06,372.84,Food,Groceries,M-Pesa,Kwa Mali,false
+TXN-0127,STU-003,2026-07-03,774.99,Food,Snacks,M-Pesa,Campus Cafeteria,false
+TXN-0190,STU-004,2026-07-16,611.61,Transport,Uber ride,Cash,Campus Shuttle,false
+TXN-0314,STU-006,2026-08-25,1247.40,Education,Lab materials,M-Pesa,Printing Hub,false
+TXN-0046,STU-001,2026-09-02,472.10,Food,Chapati and beans,M-Pesa,Java House,false
+TXN-0107,STU-002,2026-09-05,791.13,Food,Snacks,Cash,Kwa Mali,false
+TXN-0233,STU-005,2026-07-04,1701.51,Utilities,Hostel utilities,Bank Transfer,Campus Utilities,true
+TXN-0262,STU-005,2026-08-22,888.39,Food,Lunch at campus,M-Pesa,Campus Cafeteria,false
+TXN-0322,STU-006,2026-08-12,692.65,Food,Dinner,Card,Kwa Mali,false
+TXN-0162,STU-003,2026-09-04,596.46,Food,Coffee,M-Pesa,Mama Oliech Kitchen,false
+TXN-0023,STU-001,2026-08-26,3534.34,Education,Tuition instalment,Card,Printing Hub,false
+TXN-0245,STU-005,2026-07-27,516.14,Transport,Bolt ride,M-Pesa,Uber,false
+TXN-0194,STU-004,2026-08-01,12500.00,Rent,Room rent,M-Pesa,Campus Bedsitters,true
+TXN-0083,STU-002,2026-08-17,645.22,Airtime and Internet,Wifi subscription,M-Pesa,Jamii Telecom,false
+TXN-0209,STU-004,2026-08-26,111.99,Transport,Uber ride,Cash,Campus Shuttle,false
+TXN-0176,STU-004,2026-07-03,2599.27,Utilities,Hostel utilities,Bank Transfer,Campus Utilities,true
+TXN-0220,STU-004,2026-09-24,547.38,Food,Chapati and beans,M-Pesa,Mama Oliech Kitchen,false
+TXN-0122,STU-003,2026-07-20,549.27,Airtime and Internet,Data bundle,M-Pesa,Safaricom,false
+TXN-9013,,2026-08-14,480.00,Food,Lunch at campus,M-Pesa,Campus Cafeteria,false
+TXN-0041,STU-001,2026-09-03,1289.20,Utilities,Electricity token,Bank Transfer,KPLC,true
+TXN-0141,STU-003,2026-08-17,1225.52,Airtime and Internet,Wifi subscription,M-Pesa,Zuku,false
+TXN-0002,STU-001,2026-07-05,1316.32,Utilities,Electricity token,M-Pesa,Campus Utilities,true
+TXN-0301,STU-006,2026-07-28,931.89,Food,Lunch at campus,Card,Kwa Mali,false
+TXN-0160,STU-003,2026-09-02,1250.13,Airtime and Internet,Wifi subscription,M-Pesa,Airtel,true
+TXN-0250,STU-005,2026-07-06,877.66,Entertainment,Football match,Card,Westgate Cinema,false
+TXN-0085,STU-002,2026-08-21,557.52,Food,Snacks,Cash,Campus Cafeteria,false
+TXN-9011,STU-901,2026-08-14,480.00,Food,Lunch at campus,M-Pesa,Campus Cafeteria,false
+TXN-0351,STU-005,2026-09-18,18500.00,Education,Exam fee balance,Bank Transfer,Faculty Fees Office,false
+TXN-0276,STU-005,2026-09-04,1076.05,Airtime and Internet,Data bundle,M-Pesa,Jamii Telecom,true
+TXN-0060,STU-002,2026-07-04,2038.53,Utilities,Water bill,M-Pesa,Nairobi Water,true
+TXN-0211,STU-004,2026-08-06,386.87,Personal Care,Laundry,Card,Chemist Warehouse,false
+TXN-0274,STU-005,2026-09-12,2859.57,Education,Lab materials,Bank Transfer,University Bookshop,false
+TXN-0013,STU-001,2026-07-28,212.69,Transport,Matatu fare,Cash,Bolt,false
+TXN-0063,STU-002,2026-07-02,1198.92,Airtime and Internet,Wifi subscription,M-Pesa,Airtel,true
+TXN-0062,STU-002,2026-07-21,1224.22,Education,Online course,Bank Transfer,University Bookshop,false
+TXN-0151,STU-003,2026-08-10,223.30,Transport,Matatu fare,M-Pesa,Bolt,false
+TXN-0277,STU-005,2026-09-20,700.48,Airtime and Internet,Wifi subscription,M-Pesa,Zuku,false
+TXN-0028,STU-001,2026-08-29,579.58,Food,Chapati and beans,Cash,Campus Cafeteria,false
+TXN-0343,STU-006,2026-09-12,529.46,Transport,Uber ride,M-Pesa,Matatu Route 46,false
+TXN-0193,STU-004,2026-07-09,1149.94,Personal Care,Laundry,Cash,Naivas Pharmacy,false
+TXN-0253,STU-005,2026-08-01,10500.00,Rent,Monthly hostel rent,Bank Transfer,Sunrise Apartments,true
+TXN-0070,STU-002,2026-07-22,657.39,Food,Chapati and beans,Card,Quickmart,false
+TXN-0138,STU-003,2026-08-09,3280.66,Education,Online course,Bank Transfer,Faculty Fees Office,false
+TXN-0052,STU-001,2026-09-16,201.84,Transport,Shuttle ticket,M-Pesa,Uber,false
+TXN-0055,STU-001,2026-09-07,249.12,Transport,Matatu fare,M-Pesa,Bolt,false
+TXN-0201,STU-004,2026-08-28,826.03,Food,Lunch at campus,Card,Campus Cafeteria,false
+TXN-0317,STU-006,2026-08-22,419.41,Food,Market run,M-Pesa,Mama Oliech Kitchen,false
+TXN-0294,STU-006,2026-07-22,1865.52,Education,Printing and binding,Bank Transfer,Printing Hub,false
+TXN-0114,STU-002,2026-09-14,312.33,Transport,Fuel top-up,Cash,Campus Shuttle,false
+TXN-0247,STU-005,2026-07-28,640.90,Transport,Bolt ride,Cash,Uber,false
+TXN-0305,STU-006,2026-07-21,178.36,Transport,Bolt ride,Cash,Campus Shuttle,false
+TXN-0183,STU-004,2026-07-28,561.68,Food,Lunch at campus,Card,Kwa Mali,false
+TXN-0196,STU-004,2026-08-12,3676.52,Education,Online course,Card,Stationery Mart,false
+TXN-0011,STU-001,2026-07-10,813.52,Food,Dinner,Cash,Mama Oliech Kitchen,false
+TXN-0075,STU-002,2026-07-14,629.40,Entertainment,Music subscription,Card,Westgate Cinema,false
+TXN-0325,STU-006,2026-08-02,445.47,Transport,Uber ride,M-Pesa,Total Petrol Station,false
+TXN-0089,STU-002,2026-08-20,937.39,Food,Lunch at campus,Card,Mama Oliech Kitchen,false
+TXN-0309,STU-006,2026-07-09,1096.11,Personal Care,Pharmacy,Cash,Supercuts Salon,false
+TXN-0263,STU-005,2026-08-03,495.50,Food,Snacks,Cash,Java House,false
+TXN-0229,STU-004,2026-09-05,1757.47,Entertainment,Football match,Card,Spotify,false
+TXN-0227,STU-004,2026-09-17,600.69,Transport,Bolt ride,Cash,Campus Shuttle,false
+TXN-0344,STU-006,2026-09-25,411.68,Transport,Uber ride,M-Pesa,Matatu Route 46,false
+TXN-0032,STU-001,2026-08-05,293.13,Transport,Bolt ride,M-Pesa,Total Petrol Station,false
+TXN-0208,STU-004,2026-08-23,250.70,Transport,Matatu fare,M-Pesa,Bolt,false
+TXN-0302,STU-006,2026-07-19,593.45,Food,Market run,M-Pesa,Kwa Mali,false
+TXN-0249,STU-005,2026-07-26,1819.18,Entertainment,Game purchase,Card,Westgate Cinema,false
+TXN-9014,STU-002,,480.00,Food,Lunch at campus,M-Pesa,Campus Cafeteria,false
+TXN-0090,STU-002,2026-08-09,105.30,Transport,Shuttle ticket,M-Pesa,Total Petrol Station,false
+TXN-0237,STU-005,2026-07-21,808.11,Airtime and Internet,Wifi subscription,M-Pesa,Airtel,false
+,STU-002,2026-08-14,480.00,Food,Lunch at campus,M-Pesa,Campus Cafeteria,false
+TXN-0126,STU-003,2026-07-18,191.67,Food,Chapati and beans,M-Pesa,Chicken Inn,false
+TXN-0336,STU-006,2026-09-14,661.16,food,Dinner,Card,Campus Cafeteria,false
+TXN-0177,STU-004,2026-07-07,4394.57,Education,Printing and binding,Card,Stationery Mart,false
+TXN-0346,STU-006,2026-09-21,183.90,Transport,Bolt ride,M-Pesa,Campus Shuttle,false
+TXN-0283,STU-005,2026-09-18,712.94,Food,Dinner,Cash,Campus Cafeteria,false
+TXN-0310,STU-006,2026-07-05,837.56,Other,Club contribution,Cash,Gift Shop,false
+TXN-0287,STU-005,2026-09-13,91.89,Transport,Uber ride,M-Pesa,Total Petrol Station,false
+TXN-0348,STU-006,2026-09-30,641.08,Personal Care,Laundry,Card,Barber Hub,false
+TXN-0058,STU-001,2026-09-13,431.88,Personal Care,Pharmacy,Card,Supercuts Salon,false
+TXN-0297,STU-006,2026-07-05,501.81,Food,Coffee,Card,Chicken Inn,false
+TXN-0143,STU-003,2026-08-07,433.86,Food,Chapati and beans,Cash,Quickmart,false
+TXN-0295,STU-006,2026-07-02,730.29,Airtime and Internet,Wifi subscription,M-Pesa,Jamii Telecom,true
+TXN-0064,STU-002,2026-07-19,1368.95,Airtime & Internet,Airtime top-up,M-Pesa,Zuku,false
+TXN-0280,STU-005,2026-09-02,406.15,Food,corrected entry,M-Pesa,Java House,false
+TXN-9005,STU-002,2026-08-14,0.00,Food,Lunch at campus,M-Pesa,Campus Cafeteria,false
+TXN-0252,STU-005,2026-07-08,859.06,Other,Gift,Cash,Misc Vendor,false
+TXN-0068,STU-002,2026-07-29,235.63,Food,Dinner,M-Pesa,Quickmart,false
+TXN-0178,STU-004,2026-07-24,1671.87,Education,Online course,Card,Stationery Mart,false
+TXN-0307,STU-006,2026-07-13,1135.78,Entertainment,Music subscription,M-Pesa,Spotify,false
+TXN-0165,STU-003,2026-09-24,229.39,Food,Market run,M-Pesa,Chicken Inn,false
+TXN-0175,STU-004,2026-07-01,12500.00,Rent,Monthly hostel rent,Bank Transfer,Nyayo Hostels,true
+TXN-0185,STU-004,2026-07-15,757.99,Food,Groceries,Cash,Mama Oliech Kitchen,false
+TXN-0223,STU-004,2026-09-04,872.72,Food,Snacks,M-Pesa,Quickmart,false
+TXN-0324,STU-006,2026-08-27,193.83,Transport,Fuel top-up,M-Pesa,Bolt,false
+TXN-0319,STU-006,2026-08-15,184.95,Food,Chapati and beans,M-Pesa,Kwa Mali,false
+TXN-0091,STU-002,2026-08-30,539.71,Transport,Bolt ride,Cash,Campus Shuttle,false
+TXN-0140,STU-003,2026-08-03,1579.95,Airtime and Internet ,Airtime top-up,M-Pesa,Jamii Telecom,true
+TXN-0270,STU-005,2026-08-09,1072.97,Personal Care,Toiletries,Cash,Naivas Pharmacy,false
+TXN-0137,STU-003,2026-08-06,2533.34,Utilities,Hostel utilities,Bank Transfer,,true
+TXN-0118,STU-003,2026-07-04,1363.99,Utilities,Water bill,M-Pesa,Nairobi Water,true
+TXN-0045,STU-001,2026-09-20,913.73,Airtime and Internet,Wifi subscription,M-Pesa,Safaricom,false
+TXN-0081,STU-002,2026-08-21,2194.61,Education,Textbook,Card,Printing Hub,false
+TXN-0097,STU-002,2026-08-26,584.99,Other,Miscellaneous,Cash,Misc Vendor,false
+TXN-0135,STU-003,2026-07-14,646.14,Other,Gift,Cash,Gift Shop,false
+TXN-0123,STU-003,2026-07-09,453.28,Food,Groceries,Card,Quickmart,false
+TXN-0280,STU-005,2026-09-02,156.15,Food,Chapati and beans,M-Pesa,Java House,false
+TXN-0331,STU-006,2026-09-05,2482.40,Utilities,Hostel utilities,Bank Transfer,KPLC,true
+TXN-0320,STU-006,2026-08-20,377.94,Food,Snacks,Card,Java House,false
+TXN-0054,STU-001,2026-09-10,321.11,Transport,Fuel top-up,Cash,Uber,false
+TXN-0133,STU-003,2026-07-03,1465.78,Entertainment,Football match,M-Pesa,Spotify,false
+TXN-0036,STU-001,2026-08-31,1389.65,Entertainment,Music subscription,Card,Nairobi Sports Club,false
+TXN-9002,STU-002,05/08/2026,480.00,Food,Lunch at campus,M-Pesa,Campus Cafeteria,false
+TXN-0016,STU-001,2026-07-21,177.55,Transport,Bolt ride,M-Pesa,Campus Shuttle,false
+TXN-0187,STU-004,2026-07-21,427.06,Transport,Bolt ride,M-Pesa,Bolt,false
+TXN-0281,STU-005,2026-09-25,354.42,Food,Chapati and beans,M-Pesa,Campus Cafeteria,false
+TXN-0218,STU-004,2026-09-18,424.13,Airtime and Internet,Wifi subscription,M-Pesa,Zuku,false
+TXN-0224,STU-004,2026-09-26,502.66,food,Dinner,Cash,Chicken Inn,false
+TXN-0121,STU-003,2026-07-05,1269.46,Airtime and Internet,Wifi subscription,M-Pesa,Safaricom,true
+TXN-0236,STU-005,2026-07-05,650.96,Airtime and Internet,Airtime top-up,M-Pesa,Jamii Telecom,true
+TXN-0157,STU-003,2026-09-06,1074.40,Utilities,Electricity token,Bank Transfer,Nairobi Water,true
+TXN-0199,STU-004,2026-08-21,1175.75,Airtime and Internet,Data bundle,M-Pesa,Airtel,false
+TXN-0129,STU-003,2026-07-08,151.95,Transport,Matatu fare,M-Pesa,Campus Shuttle,false
+TXN-0106,STU-002,2026-09-18,349.36,Food,Market run,M-Pesa,Kwa Mali,false
+TXN-0105,STU-002,2026-09-25,490.12,Food,Groceries,Card,Campus Cafeteria,false
+TXN-0212,STU-004,2026-08-19,257.34,Other,Club contribution,Cash,Misc Vendor,false
+TXN-0078,STU-002,2026-08-01,9500.00,Rent,Monthly hostel rent,Bank Transfer,Sunrise Apartments,true
+TXN-0093,STU-002,2026-08-24,843.03,Transport,corrected entry,Cash,Campus Shuttle,false
+TXN-0043,STU-001,2026-09-27,1831.79,Education,Tuition instalment,Card,Printing Hub,false
+TXN-0226,STU-004,2026-09-07,155.33,Transport,Fuel top-up,M-PESA,Total Petrol Station,false
+TXN-0010,STU-001,2026-07-04,928.49,Food,Coffee,M-Pesa,Mama Oliech Kitchen,false
+TXN-9018,STU-002,2026-08-14,twelve hundred,Food,Lunch at campus,M-Pesa,Campus Cafeteria,false
+TXN-0279,STU-005,2026-09-22,396.74,Food,Groceries,Card,Mama Oliech Kitchen,false
+TXN-0017,STU-001,2026-07-09,2181.14,Entertainment,Game purchase,M-Pesa,Spotify,false
+TXN-0125,STU-003,2026-07-09,817.93,Food,Coffee,M-Pesa,Chicken Inn,false
+TXN-0076,STU-002,2026-07-29,693.59,Personal Care,Pharmacy,Card,Supercuts Salon,false
+TXN-0195,STU-004,2026-08-06,2370.94,Utilities,Water bill,Bank Transfer,Nairobi Water,true
+TXN-0269,STU-005,2026-08-20,2072.35,Entertainment,Music subscription,M-Pesa,Nairobi Sports Club,false
+TXN-0088,STU-002,2026-08-14,426.55,Food,Market run,Cash,Kwa Mali,false
+TXN-0246,STU-005,2026-07-11,521.39,Transport,Fuel top-up,M-Pesa,Bolt,false
+TXN-0332,STU-006,2026-09-09,1930.23,Education,Tuition instalment,Bank Transfer,Printing Hub,false
+TXN-0117,STU-003,2026-07-01,15000.00,Rent,Room rent,Bank Transfer,Sunrise Apartments,true
+TXN-0338,STU-006,2026-09-17,610.04,Food,Snacks,M-Pesa,Quickmart,false
+TXN-0300,STU-006,2026-07-02,444.99,Food,Chapati and beans,M-Pesa,Chicken Inn,false
+TXN-0014,STU-001,2026-07-15,442.34,Transport,Uber ride,M-Pesa,Bolt,false
+TXN-9012,STU-902,2026-08-14,480.00,Food,Lunch at campus,M-Pesa,Campus Cafeteria,false
+TXN-0214,STU-004,2026-09-05,2051.94,Utilities,Electricity token,M-Pesa,Nairobi Water,true
+TXN-0057,STU-001,2026-09-28,734.48,Entertainment,Game purchase,M-Pesa,Nairobi Sports Club,false
+TXN-0170,STU-003,2026-09-30,230.80,TRANSPORT,Fuel top-up,M-Pesa,Campus Shuttle,false
+TXN-0189,STU-004,2026-07-27,600.37,  Transport,,M-Pesa,Uber,false
+TXN-0009,STU-001,2026-07-09,795.70,Food,Snacks,Card,Mama Oliech Kitchen,false
+TXN-0244,STU-005,2026-07-08,643.63,Transport,Fuel top-up,M-Pesa,Matatu Route 46,false
+TXN-0290,STU-005,2026-09-28,641.30,Personal Care,Toiletries,M-Pesa,Naivas Pharmacy,false
+TXN-0251,STU-005,2026-07-24,369.91,Personal Care,Laundry,Cash,Supercuts Salon,false
+TXN-0273,STU-005,2026-09-04,1539.53,Utilities,Water bill,Bank Transfer,KPLC,true
+TXN-0308,STU-006,2026-07-03,993.44,Entertainment,Game purchase,Card,Spotify,false
+TXN-0260,STU-005,2026-08-27,512.80,Food,Coffee,M-Pesa,Quickmart,false
+TXN-0173,STU-003,2026-09-15,1639.62,Entertainment,Concert ticket,Card,Steam,false
+TXN-0154,STU-003,2026-08-27,749.41,Entertainment,Football match,Card,Nairobi Sports Club,false
+TXN-0315,STU-006,2026-08-04,1731.97,Airtime and Internet,Data bundle,M-Pesa,Airtel,true
+TXN-0084,STU-002,2026-08-11,372.88,Food,Lunch at campus,Cash,Quickmart,false
+TXN-0164,STU-003,2026-09-14,394.30,Food,Dinner,M-Pesa,Mama Oliech Kitchen,false
+TXN-0041,STU-001,2026-09-03,1289.20,Utilities,Electricity token,Bank Transfer,KPLC,true
+TXN-0072,STU-002,2026-07-11,519.54,Transport,Uber ride,M-Pesa,Campus Shuttle,false
+TXN-9015,STU-002,2026-08-14,,Food,Lunch at campus,M-Pesa,Campus Cafeteria,false
+TXN-0077,STU-002,2026-07-18,813.10,Other,Club contribution,M-Pesa,Gift Shop,false
+TXN-0234,STU-005,2026-07-10,4002.02,Education,Tuition instalment,Bank Transfer,Faculty Fees Office,false
+TXN-0266,STU-005,2026-08-20,258.10,Transport,Matatu fare,M-Pesa,,false
+TXN-0243,STU-005,2026-07-22,319.68,Food,Snacks,M-Pesa,Campus Cafeteria,false
+TXN-0171,STU-003,2026-09-04,390.40,Transport,Bolt ride,Cash,Uber,false
+TXN-0071,STU-002,2026-07-03,441.54,Transport,Uber ride,M-Pesa,Matatu Route 46,false
+TXN-0020,STU-001,2026-08-01,11000.00,Rent,Room rent,Bank Transfer,Campus Bedsitters,true
+TXN-0334,STU-006,2026-09-04,780.35,Airtime and Internet,Airtime top-up,M-Pesa,Safaricom,true
+TXN-0021,STU-001,2026-08-06,1572.57,Utilities,Hostel utilities,Bank Transfer,KPLC,true
+TXN-0257,STU-005,2026-08-05,1793.02,Airtime and Internet,Wifi subscription,M-Pesa,Jamii Telecom,true
+TXN-0333,STU-006,2026-09-27,2366.36,Education,Textbook,M-Pesa,University Bookshop,false
+TXN-0261,STU-005,2026-08-14,400.02,Food,Chapati and beans,Cash,Java House,false
+TXN-0102,STU-002,2026-09-02,560.08,Airtime and Internet,Data bundle,M-Pesa,Jamii Telecom,true
+TXN-0074,STU-002,2026-07-03,618.68,Transport,Bolt ride,M-Pesa,Bolt,false
+TXN-0347,STU-006,2026-09-10,762.86,Entertainment,Football match,M-Pesa,Spotify,false
+TXN-0286,STU-005,2026-09-13,484.41,Transport,Shuttle ticket,Cash,Matatu Route 46,false
+TXN-0174,STU-003,2026-09-15,388.49,Personal Care,Haircut,cash,Naivas Pharmacy,false
+TXN-0192,STU-004,2026-07-07,2059.36,Entertainment,Game purchase,M-Pesa,Westgate Cinema,false
+TXN-9008,STU-002,2026-08-14,480.00,Gambling,Lunch at campus,M-Pesa,Campus Cafeteria,false
+TXN-0050,STU-001,2026-09-21,949.43,Food,Market run,M-Pesa,Campus Cafeteria,false
+TXN-0066,STU-002,2026-07-26,673.18,Food,Lunch at campus,Cash,Chicken Inn,false
+TXN-0061,STU-002,2026-07-13,2244.99,Education,Lab materials,Card,Faculty Fees Office,false
+TXN-0313,STU-006,2026-08-18,4618.46,Education,Online course,M-Pesa,Stationery Mart,false
+TXN-0144,STU-003,2026-08-29,626.92,Food,Chapati and beans,M-Pesa,Mama Oliech Kitchen,false
+TXN-0282,STU-005,2026-09-16,747.61,Food,Groceries,M-Pesa,Kwa Mali,false
+TXN-0231,STU-004,2026-09-22,711.76,Other,Club contribution,Cash,Campus Fundraiser,false
+TXN-9007,STU-002,2026-08-14,0,Food,Lunch at campus,M-Pesa,Campus Cafeteria,false
+TXN-0198,STU-004,2026-08-03,1612.82,Airtime and Internet,Data bundle,M_Pesa,Zuku,true
+TXN-0038,STU-001,2026-08-22,1014.87,Personal Care,Laundry,Card,Barber Hub,false
+TXN-0148,STU-003,2026-08-08,310.51,Transport,Bolt ride,Cash,Total Petrol Station,false
+TXN-0284,STU-005,2026-09-28,502.96,Transport,Shuttle ticket,M-Pesa,Campus Shuttle,false
+TXN-0186,STU-004,2026-07-05,892.14,Food,Coffee,Card,Campus Cafeteria,false
+TXN-0100,STU-002,2026-09-08,2764.87,Education,Online course,Card,University Bookshop,false
+TXN-0288,STU-005,2026-09-15,554.25,Transport,Uber ride,M-Pesa,Campus Shuttle,false
+TXN-0292,STU-006,2026-07-04,2440.07,Utilities,Water bill,Bank Transfer,Campus Utilities,true
+TXN-0027,STU-001,2026-08-28,903.94,Food,Snacks,M-Pesa,Chicken Inn,false
+TXN-0206,STU-004,2026-08-20,119.00,Transport,Uber ride,M-Pesa,Matatu Route 46,false
+TXN-0024,STU-001,2026-08-03,1162.38,Airtime and Internet,Airtime top-up,M-Pesa,Safaricom,true
+TXN-0337,STU-006,2026-09-04,819.35,Food,Coffee,M-Pesa,Chicken Inn,false
+TXN-0207,STU-004,2026-08-14,637.65,Transport,Matatu fare,Cash,Uber,false
+TXN-0188,STU-004,2026-07-18,87.79,Transport,Shuttle ticket,M-Pesa,Uber,false
+TXN-0136,STU-003,2026-08-01,15000.00,Rent,Room rent,M-Pesa,Nyayo Hostels,true
+TXN-0069,STU-002,2026-07-10,633.86,Food,Snacks,Cash,Java House,false
+TXN-0221,STU-004,2026-09-26,431.86,Food,Snacks,M-Pesa,Mama Oliech Kitchen,false
+TXN-0056,STU-001,2026-09-02,108.58,Transport,Shuttle ticket,M-Pesa,Matatu Route 46,false
+TXN-0005,STU-001,2026-07-03,1430.83,Airtime and Internet,Wifi subscription,M-Pesa,Airtel,true
+TXN-0275,STU-005,2026-09-20,1604.51,Education,Online course,M-Pesa,University Bookshop,false
+TXN-0147,STU-003,2026-08-23,542.66,Food,Market run,M-Pesa,Campus Cafeteria,false
+TXN-0241,STU-005,2026-07-04,934.74,Food,Chapati and beans,Cash,Campus Cafeteria,false
+TXN-0345,STU-006,2026-09-12,391.23,Transport,Bolt ride,Cash,Campus Shuttle,false
+TXN-0335,STU-006,2026-09-18,661.40,Airtime and Internet,Airtime top-up,M-Pesa,Airtel,false
+TXN-0306,STU-006,2026-07-17,377.97,Transport,Bolt ride,Cash,Bolt,false
+TXN-0254,STU-005,2026-08-06,1624.67,Utilities,Electricity token,Bank Transfer,Campus Utilities,true
+TXN-0145,STU-003,2026-08-31,302.85,Food,Groceries,Card,Kwa Mali,false
+TXN-9803,STU-003,2026-09-02,300.00,Transport,,Uber,false
+TXN-0025,STU-001,2026-08-16,1090.19,Airtime and Internet,Wifi subscription,M-Pesa,Safaricom,false
+TXN-0181,STU-004,2026-07-10,680.07,Food,Coffee,M-Pesa,Kwa Mali,false
+TXN-0299,STU-006,2026-07-17,209.35,Food,Coffee,Card,Campus Cafeteria,false
+TXN-0111,STU-002,2026-09-09,330.73,Transport,Uber ride,M-Pesa,Bolt,false
+TXN-0124,STU-003,2026-07-11,758.98,Food,Coffee,Cash,Kwa Mali,false
+TXN-0235,STU-005,2026-07-26,1503.36,Education,Textbook,M-Pesa,Faculty Fees Office,false
+TXN-0259,STU-005,2026-08-14,511.24,Food,Groceries,Card,Quickmart,false
+TXN-0202,STU-004,2026-08-24,265.32,Food,Market run,M-Pesa,Campus Cafeteria,false
+TXN-0047,STU-001,2026-09-07,302.17,Food,Coffee,M-Pesa,Kwa Mali,false
+TXN-0012,STU-001,2026-07-07,713.66,Food,Lunch at campus,M-Pesa,Quickmart,false
+TXN-0255,STU-005,2026-08-14,2049.87,Education,,Card,Printing Hub,false
+TXN-0158,STU-003,2026-09-14,3297.59,Education,Printing and binding,M-Pesa,Faculty Fees Office,false
+TXN-9016,STU-002,2026-08-14,480.00,,Lunch at campus,M-Pesa,Campus Cafeteria,false
+TXN-0240,STU-005,2026-07-12,323.82,Food,Coffee,M-Pesa,Quickmart,false
+TXN-0264,STU-005,2026-08-18,197.98,Food,Dinner,Cash,Chicken Inn,false
+TXN-0256,STU-005,2026-08-21,1528.10,Education,Online course,Bank Transfer,Faculty Fees Office,false
+TXN-0221,STU-004,2026-09-26,431.86,Food,Snacks,M-Pesa,Mama Oliech Kitchen,false
+TXN-0098,STU-002,2026-09-01,9500.00,Rent,Room rent,M-Pesa,Campus Bedsitters,true
+TXN-0161,STU-003,2026-09-16,1292.26,Airtime and Internet,Data bundle,M-Pesa,Airtel,false
+TXN-9019,STU-002,2027-01-15,480.00,Food,Lunch at campus,M-Pesa,Campus Cafeteria,false
+TXN-0296,STU-006,2026-07-21,1149.25,Airtime and Internet,Wifi subscription,M-Pesa,Zuku,false
+TXN-0168,STU-003,2026-09-23,418.47,Transport,Uber ride,M-Pesa,Uber,false
+TXN-0082,STU-002,2026-08-03,1561.56,Airtime and Internet,Data bundle,M-Pesa,Zuku,true
+TXN-0128,STU-003,2026-07-31,347.83,Food,Market run,M-Pesa,Mama Oliech Kitchen,false
+TXN-0215,STU-004,2026-09-12,5158.02,Education,Lab materials,Bank Transfer,Stationery Mart,false
+TXN-0316,STU-006,2026-08-16,570.44,Airtime and Internet,Data bundle,M-Pesa,Safaricom,false
+TXN-0197,STU-004,2026-08-25,3460.96,Education,Printing and binding,Bank Transfer,Stationery Mart,false
+TXN-0149,STU-003,2026-08-12,349.76,Transport,Fuel top-up,Cash,Campus Shuttle,false
+TXN-0026,STU-001,2026-08-13,455.30,Food,Coffee,Cash,Mama Oliech Kitchen,false
