@@ -4,6 +4,22 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] - 2026-10-26
+
+Brings the receipt forward as the first summary after the analysis and makes the
+backdrop visibly alive.
+
+### Changed
+
+- The receipt now follows the analysis summary directly, is section 06, and is reachable
+  through an **Open the receipt** button in the analysis and the **Receipt** section-nav
+  link. Categories, entries and method move to 07–09.
+- The backdrop now carries twelve drifting sparks, faster-moving orbs, a 38-second star
+  drift and a 55-second rotating glow. All motion is still CSS-only and stops under
+  `prefers-reduced-motion`.
+
+Release version is now `2.2.0`; the suite is 138 tests.
+
 ## [2.1.0] - 2026-10-26
 
 Adds a printable receipt summary, makes displayed shares add up exactly, and gives the

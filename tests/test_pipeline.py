@@ -104,6 +104,7 @@ class PipelineIntegrationTests(unittest.TestCase):
         report_text = report_path.read_text(encoding="utf-8")
         self.assertIn("Student Spending Analytics", report_text)
         self.assertIn("synthetic", report_text.lower())
+        self.assertIn('class="spark"', report_text)
         self.assertTrue((self.options.quarantine_dir / f"rejections_{run['run_id']}.csv").exists())
 
     def test_report_category_shares_add_up_to_one_hundred(self) -> None:

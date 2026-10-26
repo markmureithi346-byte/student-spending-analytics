@@ -24,7 +24,7 @@ useful to whoever maintains this project next — including future me.
 | 14. Upload platform | done | `platform.py`, `/upload`, isolated workspaces, 11 upload tests, browser-checked upload and analysis |
 | 15. Single-file upload | done | one transactions CSV, derived students, budget variance skipped, 95 tests |
 | 16. Per-student money plan | done | `personal.py`, `/plan`, user-defined categories, add-row controls, analysis rendered in-page without saved plans |
-| 17. Exact shares, receipt and dark theme | done | largest-remainder shares in the planner, dashboard and report, inline printable receipt, animated dark-purple backdrop, 138 tests, browser-checked at 1440 px and 390 px |
+| 17. Exact shares, receipt and dark theme | done | largest-remainder shares in the planner, dashboard and report, inline printable receipt placed directly under the analysis, drifting-spark dark-purple backdrop, 138 tests, browser-checked at 1440 px and 390 px |
 
 ## Decisions worth remembering
 

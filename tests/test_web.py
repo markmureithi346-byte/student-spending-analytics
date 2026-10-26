@@ -1267,6 +1267,12 @@ class MoneyPlanTests(unittest.TestCase):
         ):
             self.assertIn(text, page)
         self.assertIn("<svg", page)
+        self.assertIn('class="spark"', page)
+        self.assertIn('href="#analysis-receipt">Open the receipt</a>', page)
+        self.assertLess(
+            page.index('id="analysis-receipt"'),
+            page.index('id="analysis-categories"'),
+        )
         self.assertNotIn("/plan?plan=", page)
         self.assertNotIn("data/plans/", page)
         self.assertIsNone(re.search(r"/plan\?plan=p-[A-Za-z0-9_-]{16}", page))

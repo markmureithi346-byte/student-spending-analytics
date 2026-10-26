@@ -67,7 +67,7 @@ from .platform import (
     parse_upload,
     workspace_for,
 )
-from .theme import BASE_CSS
+from .theme import BASE_CSS, scene_markup
 
 logger = logging.getLogger(__name__)
 
@@ -509,9 +509,7 @@ def _document(
         "<link rel=\"icon\" href=\"data:,\">\n"
         f"<style>{BASE_CSS}{_DASH_CSS}</style>\n</head>\n<body>\n"
         f"{skip}"
-        '<div class="scene" aria-hidden="true">'
-        '<span class="orb orb-a"></span><span class="orb orb-b"></span>'
-        '<span class="orb orb-c"></span><span class="orb orb-d"></span></div>\n'
+        f"{scene_markup()}\n"
         f"{body}</body>\n</html>\n"
     )
 
@@ -2100,7 +2098,7 @@ def _plan_category_panel(plan: object, analysis: object) -> str:
     return f"""
   <section class="panel" id="analysis-categories"
     aria-labelledby="analysis-categories-title">
-    <p class="eyebrow"><span class="section-no">06</span> Categories</p>
+    <p class="eyebrow"><span class="section-no">07</span> Categories</p>
     <h2 id="analysis-categories-title">Where the money went</h2>
     <p class="lead">The first graph ranks your own categories by actual spending. The
       second puts each category's plan next to its actual spend on the same scale.</p>
@@ -2152,7 +2150,7 @@ def _plan_spending_panel(plan: object, analysis: object) -> str:
     return f"""
   <section class="panel" id="analysis-spending"
     aria-labelledby="analysis-spending-title">
-    <p class="eyebrow"><span class="section-no">07</span> Entries</p>
+    <p class="eyebrow"><span class="section-no">08</span> Entries</p>
     <h2 id="analysis-spending-title">The spending behind the totals</h2>
     <p class="lead">Newest first. These rows are the source of every category total and
       graph above.</p>
@@ -2176,7 +2174,7 @@ def _plan_method_panel(plan: MoneyPlan) -> str:
     )
     return f"""
   <section class="panel" id="analysis-method" aria-labelledby="analysis-method-title">
-    <p class="eyebrow"><span class="section-no">08</span> Method</p>
+    <p class="eyebrow"><span class="section-no">09</span> Method</p>
     <h2 id="analysis-method-title">How you planned</h2>
     <p class="plan-meta">
       <span>Method: <strong>{escape_attr(method_label)}</strong></span>
@@ -2219,7 +2217,7 @@ def _plan_receipt_panel(plan: MoneyPlan, analysis: PlanAnalysis) -> str:
     return f"""
   <section class="panel" id="analysis-receipt"
     aria-labelledby="analysis-receipt-title">
-    <p class="eyebrow"><span class="section-no">09</span> Receipt</p>
+    <p class="eyebrow"><span class="section-no">06</span> Receipt</p>
     <h2 id="analysis-receipt-title">Your plan, itemised</h2>
     <p class="lead">A receipt for the same numbers as the analysis: every category you
       spent in, the planned total, the money available and the balance left.</p>
@@ -2276,13 +2274,14 @@ def _plan_analysis_sections(plan: MoneyPlan, analysis: PlanAnalysis) -> str:
     <p class="plan-section-note">This analysis was generated in this page from the
       values above. It is not saved as a separate link or file.</p>
     <div class="plan-actions">
+      <a class="button primary" href="#analysis-receipt">Open the receipt</a>
       <a class="button ghost" href="#money">Change the numbers</a>
     </div>
   </section>
+  {_plan_receipt_panel(plan, analysis)}
   {_plan_category_panel(plan, analysis)}
   {_plan_spending_panel(plan, analysis)}
   {_plan_method_panel(plan)}
-  {_plan_receipt_panel(plan, analysis)}
 """
 
 
@@ -2307,7 +2306,7 @@ class DashboardServer(ThreadingHTTPServer):
 
 class DashboardHandler(BaseHTTPRequestHandler):
     server: DashboardServer
-    server_version = "StudentSpendingDashboard/2.1.0"
+    server_version = "StudentSpendingDashboard/2.2.0"
     sys_version = ""
     timeout = 30
 

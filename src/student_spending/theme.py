@@ -30,39 +30,52 @@ body {
 .scene { position: fixed; inset: 0; z-index: -1; overflow: hidden;
          background: linear-gradient(150deg, #09020f 0%, #1d0739 38%,
                      #2b0c52 64%, #0d031c 100%);
-         background-size: 180% 180%;
-         animation: scene-breathe 34s ease-in-out infinite alternate; }
+         background-size: 200% 200%;
+         animation: scene-breathe 22s ease-in-out infinite alternate; }
 .scene::before { content: ""; position: absolute; inset: -20%; z-index: 0;
   background-image: radial-gradient(rgba(255,255,255,.55) 1px, transparent 1.4px);
   background-size: 46px 46px; opacity: .12;
   -webkit-mask-image: radial-gradient(ellipse at 50% 22%, #000 8%, transparent 70%);
   mask-image: radial-gradient(ellipse at 50% 22%, #000 8%, transparent 70%);
-  animation: scene-stars 70s linear infinite; }
+  animation: scene-stars 38s linear infinite; }
 .scene::after { content: ""; position: absolute; inset: -35%; z-index: 0;
   background: conic-gradient(from 0deg at 50% 50%, transparent 0deg,
-    rgba(168,85,247,.16) 65deg, transparent 145deg, rgba(217,70,239,.12) 235deg,
+    rgba(168,85,247,.18) 65deg, transparent 145deg, rgba(217,70,239,.14) 235deg,
     transparent 320deg);
-  opacity: .7; animation: scene-turn 90s linear infinite; }
+  opacity: .75; animation: scene-turn 55s linear infinite; }
 .orb { position: absolute; z-index: 1; border-radius: 50%; filter: blur(85px);
-       opacity: .55; animation: drift 26s ease-in-out infinite alternate; }
+       opacity: .58; animation: drift 18s ease-in-out infinite alternate; }
 .orb-a { width: 46vw; height: 46vw; top: -14vh; left: -10vw; background: #7c3aed; }
 .orb-b { width: 38vw; height: 38vw; top: 6vh; right: -10vw; background: #d946ef;
-         opacity: .38; animation-duration: 31s; animation-delay: -8s; }
+         opacity: .42; animation-duration: 22s; animation-delay: -8s; }
 .orb-c { width: 44vw; height: 44vw; bottom: -20vh; left: 26vw; background: #4f46e5;
-         opacity: .45; animation-duration: 36s; animation-delay: -16s; }
+         opacity: .5; animation-duration: 26s; animation-delay: -16s; }
 .orb-d { width: 30vw; height: 30vw; top: 46vh; right: 16vw; background: #a855f7;
-         opacity: .3; animation-duration: 42s; animation-delay: -22s; }
+         opacity: .36; animation-duration: 30s; animation-delay: -22s; }
+.spark { position: absolute; z-index: 2; left: var(--x, 50%); top: var(--y, 50%);
+  width: var(--size, 5px); height: var(--size, 5px); border-radius: 50%;
+  background: radial-gradient(circle, #fff 0%, #e9d5ff 38%, rgba(217,70,239,0) 72%);
+  box-shadow: 0 0 12px 3px rgba(192,132,252,.55);
+  opacity: 0; animation: spark-rise var(--dur, 18s) ease-in-out infinite;
+  animation-delay: var(--delay, 0s); }
 @keyframes scene-breathe {
   0% { background-position: 0% 18%; }
   50% { background-position: 100% 55%; }
   100% { background-position: 28% 100%; }
 }
-@keyframes scene-stars { to { transform: translate3d(-46px, 46px, 0); } }
+@keyframes scene-stars { to { transform: translate3d(-74px, 74px, 0); } }
 @keyframes scene-turn { to { transform: rotate(360deg); } }
 @keyframes drift {
   0% { transform: translate3d(0, 0, 0) scale(1); }
-  50% { transform: translate3d(3vw, 4vh, 0) scale(1.07); }
-  100% { transform: translate3d(-4vw, -3vh, 0) scale(.95); }
+  50% { transform: translate3d(8vw, 7vh, 0) scale(1.15); }
+  100% { transform: translate3d(-7vw, -6vh, 0) scale(.9); }
+}
+@keyframes spark-rise {
+  0% { transform: translate3d(0, 16vh, 0) scale(.5); opacity: 0; }
+  14% { opacity: .8; }
+  55% { transform: translate3d(20px, 0, 0) scale(1.1); opacity: .6; }
+  84% { opacity: .25; }
+  100% { transform: translate3d(-14px, -18vh, 0) scale(.65); opacity: 0; }
 }
 .skip { position: absolute; left: -999px; top: 8px; background: #f3e8ff; color: #4c1d95;
         padding: 8px 14px; border-radius: 8px; z-index: 100; }
@@ -243,7 +256,7 @@ footer.footer { margin: 4px 0 0; }
 }
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
-  .scene, .scene::before, .scene::after, .orb, .receipt::before { animation: none; }
+  .scene, .scene::before, .scene::after, .orb, .spark, .receipt::before { animation: none; }
   .card { transition: none; }
 }
 @media print {
@@ -280,3 +293,32 @@ footer.footer { margin: 4px 0 0; }
   a { color: #000; text-decoration: none; }
 }
 """
+
+
+def scene_markup() -> str:
+    """Return the animated backdrop shared by every generated page."""
+    sparks = (
+        (4, 74, 6, 17, -3),
+        (9, 34, 4, 21, -11),
+        (14, 88, 8, 19, -7),
+        (22, 12, 5, 24, -15),
+        (31, 62, 4, 18, -9),
+        (43, 6, 7, 22, -2),
+        (56, 82, 5, 16, -12),
+        (66, 24, 4, 23, -6),
+        (74, 56, 6, 20, -14),
+        (83, 10, 5, 18, -5),
+        (90, 78, 7, 25, -10),
+        (96, 42, 4, 17, -8),
+    )
+    spark_html = "".join(
+        f'<span class="spark" style="--x:{x}%;--y:{y}%;--size:{size}px;'
+        f'--dur:{duration}s;--delay:{delay}s"></span>'
+        for x, y, size, duration, delay in sparks
+    )
+    return (
+        '<div class="scene" aria-hidden="true">'
+        '<span class="orb orb-a"></span><span class="orb orb-b"></span>'
+        '<span class="orb orb-c"></span><span class="orb orb-d"></span>'
+        f"{spark_html}</div>"
+    )

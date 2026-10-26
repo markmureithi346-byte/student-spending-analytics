@@ -22,7 +22,7 @@ from .components import (
     share_cell as _share_cell,
     table as _table,
 )
-from .theme import BASE_CSS
+from .theme import BASE_CSS, scene_markup
 from .validate import RejectedRecord
 
 logger = logging.getLogger(__name__)
@@ -422,9 +422,7 @@ def write_report(
         "<title>Student Spending Analytics Report</title>\n"
         f"<style>{_CSS}</style>\n</head>\n<body>\n"
         '<a class="skip" href="#overview">Skip to content</a>\n'
-        '<div class="scene" aria-hidden="true">'
-        '<span class="orb orb-a"></span><span class="orb orb-b"></span>'
-        '<span class="orb orb-c"></span></div>\n'
+        f"{scene_markup()}\n"
         f"{body}</body>\n</html>\n"
     )
 

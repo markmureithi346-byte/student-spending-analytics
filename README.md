@@ -270,8 +270,9 @@ redirect, no saved plan, no result link and no separate file. The analysis shows
   **Under plan**, **Over plan**, **No plan**, **Not used**, **No activity**);
 - an essential-versus-flexible split, the spending entries behind the totals, and the
   budgeting method you chose;
-- a receipt summary with each spent-in category, its share, the planned total, the money
-  available and the balance left, ready to print or save as PDF from the browser.
+- a receipt summary directly below the analysis, with each spent-in category, its share,
+  the planned total, the money available and the balance left, ready to print or save as
+  PDF from the browser. **Open the receipt** jumps straight to it.
 
 ![Money plan analysis below the form](docs/images/plan-result.png)
 
@@ -585,7 +586,7 @@ escaped analysis names.
 | No plan ids or saved results | With nothing stored, there is no link to leak or file to delete; every submission reflects only the form the student just submitted |
 | Largest-remainder share rounding | Displayed one-decimal shares should match the whole; naive rounding of seven equal parts shows 14.3% each and a 100.1% total, so the spare tenth goes to the largest remainders |
 | Receipt is a print view, not a stored document | The receipt reuses the analysis values and the browser's print/save-as-PDF flow, so it adds no file, link or retention obligation |
-| Animated CSS backdrop with a still alternative | The moving gradient, stars, orbs and receipt sheen are pure CSS; `prefers-reduced-motion` disables them and the print stylesheet removes them entirely |
+| Animated CSS backdrop with a still alternative | The moving gradient, stars, orbs, drifting sparks and receipt sheen are pure CSS; `prefers-reduced-motion` disables them and the print stylesheet removes them entirely |
 | Editable install with a console script | One command to run the pipeline; the `src/` layout also prevents tests from importing the package by accident |
 | CI runs the pipeline twice | Proves idempotency on a clean machine, not just in a local wrapper |
 
