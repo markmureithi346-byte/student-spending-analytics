@@ -14,14 +14,15 @@ useful to whoever maintains this project next — including future me.
 | 4. Database design and loading | done | 8 tables, 12 views, PK/FK/CHECK, upsert loading |
 | 5. SQL analytics | done | monthly, category, weekday, budget, week-over-week queries |
 | 6. Analytical modelling | done | fact/dimension split, single grain per view |
-| 7. Quality and testing | done | 12 checks; the suite grew to 92 tests by phase 14 |
+| 7. Quality and testing | done | 12 checks; the suite grew to 95 tests by phase 15 |
 | 8. Logging and repeatability | done | console + file logging, run table, idempotent rerun |
 | 9. Visualisation | done | dependency-free HTML report from SQL |
 | 10. Documentation | done | README, data dictionary, quality policy, examples |
 | 11. Packaging and release | done | `pyproject.toml`, console script, wheel build, CI matrix, MIT licence |
 | 12. Report experience | done | animated purple theme, sticky nav, responsive stacked tables, refreshed screenshots |
 | 13. Interactive dashboard | done | `web.py`, `student-spending serve`, 20 dashboard tests, browser-checked at 1280 px and 390 px |
-| 14. Upload platform | done | `platform.py`, `/upload`, isolated workspaces, 11 upload tests (92 total), browser-checked upload and analysis |
+| 14. Upload platform | done | `platform.py`, `/upload`, isolated workspaces, 11 upload tests, browser-checked upload and analysis |
+| 15. Single-file upload | done | one transactions CSV, derived students, budget variance skipped, 95 tests |
 
 ## Decisions worth remembering
 
@@ -73,6 +74,11 @@ useful to whoever maintains this project next — including future me.
   input directory, SQLite file and report. The committed warehouse is never in the write
   path, so a bad upload cannot damage the sample analysis and two datasets can stay
   open in different tabs. The cost is disk usage and no delete/retention UI yet.
+- **One CSV is enough for an upload.** The transaction file already names every student,
+  so requiring a second file duplicated information the uploader might not have. The
+  derived dimension uses the id as its label and stores unknown descriptive fields as 0
+  or `Not provided`; no budget rows means the report says variance is unavailable rather
+  than presenting a misleading "0 of 0" result. The CLI keeps the full three-file model.
 - **One pipeline, called from two places.** The upload route imports `PipelineOptions`
   and `run_pipeline` from the CLI instead of reimplementing loading. Capturing stdout
   keeps the HTTP response clean, and a process-wide lock serialises runs.

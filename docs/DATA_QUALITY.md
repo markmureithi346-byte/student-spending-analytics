@@ -71,6 +71,9 @@ separately and are not part of this equation.
 
 ## Automated checks (12)
 
+The full pipeline records 12 checks. A transactions-only upload runs 11: without budget
+rows, `budgets_present` is not recorded because there is no budget analysis to protect.
+
 | Check | Fails when |
 |---|---|
 | `reconciliation_counts` | either identity above is broken |

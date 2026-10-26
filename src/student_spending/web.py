@@ -29,7 +29,6 @@ from .platform import (
     MAX_CSV_ROWS,
     MAX_FILE_BYTES,
     MAX_REQUEST_BYTES,
-    MAX_TOTAL_BYTES,
     MAX_TITLE_LENGTH,
     AnalysisWorkspace,
     PipelineFailure,
@@ -58,8 +57,6 @@ SEARCH_LIMIT = 80
 MERCHANT_LIMIT = 8
 SAMPLE_FILES = {
     "student_expenses.csv": config.DEFAULT_TRANSACTIONS_CSV,
-    "student_profiles.csv": config.DEFAULT_PROFILES_CSV,
-    "student_budgets.csv": config.DEFAULT_BUDGETS_CSV,
 }
 
 _DASH_CSS = """
@@ -1287,17 +1284,16 @@ def render_upload_page(
         else '<a class="button ghost" href="/">Open the sample dashboard</a>'
     )
     file_bytes = MAX_FILE_BYTES // (1024 * 1024)
-    total_bytes = MAX_TOTAL_BYTES // (1024 * 1024)
     body = f"""
 <main class="shell">
   <header class="hero dash-hero" id="top">
     <p class="eyebrow">Synthetic data &middot; build an analysis</p>
     <h1>Analyze <span>your data</span></h1>
-    <p class="lede">Upload three CSVs and the pipeline validates every row, loads an
-      isolated warehouse and opens the same filterable dashboard. Nothing is uploaded
-      to a remote service.</p>
+    <p class="lede">Upload one transactions CSV and the pipeline validates every row,
+      derives the student list, loads an isolated warehouse and opens the same
+      filterable dashboard. Nothing is uploaded to a remote service.</p>
     <div class="hero-actions">
-      <a class="button primary" href="#upload-form">Upload files</a>
+      <a class="button primary" href="#upload-form">Upload a CSV</a>
       {back_link}
     </div>
     <p class="disclaimer"><strong>Synthetic data only.</strong> Do not upload real
@@ -1312,39 +1308,36 @@ def render_upload_page(
   <div class="upload-grid">
     <section class="panel" id="upload-form" aria-labelledby="upload-title">
       <p class="eyebrow">New analysis</p>
-      <h2 id="upload-title">Three CSVs, one analysed warehouse</h2>
-      <p class="lead">The transactions file is the fact table. Profiles define the
-        students and budgets make the budget comparison meaningful. Download the sample
-        files below if you want a known-good starting point.</p>
+      <h2 id="upload-title">One CSV, one analysed warehouse</h2>
+      <p class="lead">The transactions file is the only input. Student labels come from
+        <code>student_id</code>, so there is no separate profile file, and budget
+        variance is skipped. Download the sample below for a known-good starting point.</p>
       {_upload_errors(errors or [])}
       <form class="upload-form" method="post" action="/upload" enctype="multipart/form-data">
         <div class="field field-full">
           <label for="analysis-title">Analysis name <span class="section-note">optional</span></label>
           <input id="analysis-title" name="title" type="text" maxlength="{MAX_TITLE_LENGTH}"
-            value="{escape_attr(title)}" placeholder="e.g. October test budget"
+            value="{escape_attr(title)}" placeholder="e.g. October spending"
             autocomplete="off">
         </div>
         {_file_field("transactions", full=True)}
-        {_file_field("profiles")}
-        {_file_field("budgets")}
         <div class="field-full sample-links">
-          <span>Sample inputs:</span>
+          <span>Sample input:</span>
           <a href="/samples/student_expenses.csv" download>transactions</a>
-          <a href="/samples/student_profiles.csv" download>profiles</a>
-          <a href="/samples/student_budgets.csv" download>budgets</a>
         </div>
         <label class="check-field">
           <input type="checkbox" name="synthetic" value="yes" required>
-          <span><strong>I confirm these files are synthetic.</strong> They contain no real
+          <span><strong>I confirm this file is synthetic.</strong> It contains no real
             student, account, card or payment details.</span>
         </label>
         <div class="actions">
           <button class="button primary" type="submit">Run analysis</button>
           <span class="section-note">The pipeline runs immediately; this may take a moment.</span>
         </div>
-        <p class="upload-note">Limits: {file_bytes} MB per file, {total_bytes} MB total,
-          {MAX_CSV_ROWS:,} data rows per file. Files are saved locally under
-          <code>data/uploads/</code>; each analysis gets its own database and report.</p>
+        <p class="upload-note">Limits: one .csv file, {file_bytes} MB and
+          {MAX_CSV_ROWS:,} data rows. Files are saved locally under
+          <code>data/uploads/</code>; each analysis gets its own database and report.
+          No profiles or budgets file is required.</p>
       </form>
     </section>
 
@@ -1398,7 +1391,7 @@ class DashboardServer(ThreadingHTTPServer):
 
 class DashboardHandler(BaseHTTPRequestHandler):
     server: DashboardServer
-    server_version = "StudentSpendingDashboard/1.2"
+    server_version = "StudentSpendingDashboard/1.3"
     sys_version = ""
     timeout = 30
 

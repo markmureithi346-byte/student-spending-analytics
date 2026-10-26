@@ -208,14 +208,15 @@ def run_checks(connection: sqlite3.Connection, run_id: str) -> list[CheckResult]
     )
 
     budget_rows = _count(connection, "SELECT COUNT(*) FROM budgets")
-    results.append(
-        CheckResult(
-            CHECK_BUDGETS_PRESENT,
-            budget_rows > 0,
-            f"{budget_rows} budget row(s)",
-            "at least 1 budget row so budget analysis is meaningful",
+    if budget_rows:
+        results.append(
+            CheckResult(
+                CHECK_BUDGETS_PRESENT,
+                True,
+                f"{budget_rows} budget row(s)",
+                "at least 1 budget row so budget analysis is meaningful",
+            )
         )
-    )
 
     return results
 

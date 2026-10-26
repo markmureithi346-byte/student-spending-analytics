@@ -144,6 +144,37 @@ class PipelineIntegrationTests(unittest.TestCase):
             connection.execute("SELECT COUNT(*) FROM pipeline_runs").fetchone()[0], 1
         )
 
+    def test_single_file_mode_derives_students_and_skips_budgets(self) -> None:
+        options = dataclasses.replace(
+            self.options, profiles_csv=None, budgets_csv=None
+        )
+        self.assertEqual(self.run_pipeline_quietly(options), 0)
+
+        connection = self.connect()
+        self.addCleanup(connection.close)
+        self.assertEqual(
+            connection.execute("SELECT COUNT(*) FROM budgets").fetchone()[0], 0
+        )
+        self.assertGreater(
+            connection.execute("SELECT COUNT(*) FROM students").fetchone()[0], 0
+        )
+        years = {
+            row[0] for row in connection.execute("SELECT DISTINCT study_year FROM students")
+        }
+        self.assertEqual(years, {0})
+        self.assertGreater(
+            self.last_run(connection)["rows_accepted"], 0
+        )
+        self.assertEqual(
+            connection.execute("SELECT COUNT(*) FROM data_quality_results").fetchone()[0],
+            11,
+        )
+
+        report_text = (
+            self.options.reports_dir / "spending_report.html"
+        ).read_text(encoding="utf-8")
+        self.assertIn("No budget plan was provided", report_text)
+
     def test_missing_input_file_fails_the_run_record(self) -> None:
         broken = dataclasses.replace(
             self.options, transactions_csv=self.root / "missing.csv"

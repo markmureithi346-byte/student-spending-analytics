@@ -9,6 +9,7 @@ from student_spending.extract import (
     BUDGET_COLUMNS,
     PROFILE_COLUMNS,
     TRANSACTION_COLUMNS,
+    derive_profiles,
     extract_transactions,
     read_budgets,
     read_profiles,
@@ -84,6 +85,30 @@ class ExtractTransactionsTests(TempFileTestCase):
 
 
 class DimensionExtractionTests(TempFileTestCase):
+    def test_profiles_are_derived_from_transaction_student_ids(self) -> None:
+        path = self.write(
+            HEADER
+            + GOOD_ROW
+            + "TXN-0002,STU-002,2026-08-11,200.00,Food,Lunch,M-Pesa,Cafeteria,false\n"
+            + "TXN-0003,STU-001,2026-08-12,300.00,Food,Snack,Cash,Cafeteria,false\n"
+            + "TXN-0004,,2026-08-13,100.00,Food,Tea,Cash,Cafeteria,false\n"
+        )
+        profiles = derive_profiles(extract_transactions(path))
+        self.assertEqual(
+            [profile["student_id"] for profile in profiles], ["STU-001", "STU-002"]
+        )
+        self.assertEqual(profiles[0]["profile_label"], "STU-001")
+        self.assertEqual(profiles[0]["campus"], "Not provided")
+        self.assertEqual(profiles[0]["study_year"], 0)
+        self.assertEqual(profiles[0]["monthly_income_cents"], 0)
+
+    def test_derived_profiles_need_at_least_one_student_id(self) -> None:
+        path = self.write(
+            HEADER + "TXN-0001,,2026-08-10,450.00,Food,Lunch,M-Pesa,Cafeteria,false\n"
+        )
+        with self.assertRaises(ExtractionError):
+            derive_profiles(extract_transactions(path))
+
     def test_profiles_are_read(self) -> None:
         header = ",".join(PROFILE_COLUMNS) + "\n"
         path = self.write(

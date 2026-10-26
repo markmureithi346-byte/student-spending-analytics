@@ -1,8 +1,10 @@
-"""Validate uploaded CSV bundles and run each one as an isolated analysis.
+"""Validate a single transactions CSV and run each upload as an isolated analysis.
 
 The platform never edits the committed warehouse. Every accepted upload gets its
 own id, input directory, SQLite database and report; the uploaded bytes are only
-parsed as CSV and then processed by the same pipeline used from the CLI.
+parsed as CSV and then processed by the same pipeline used from the CLI. Student
+profiles are derived from the transaction student IDs and budgets are optional,
+so the user only has to supply one file.
 """
 
 from __future__ import annotations
@@ -24,13 +26,12 @@ from email.parser import BytesParser
 from pathlib import Path
 
 from . import config
-from .extract import BUDGET_COLUMNS, PROFILE_COLUMNS, TRANSACTION_COLUMNS
+from .extract import TRANSACTION_COLUMNS
 
 logger = logging.getLogger(__name__)
 
 MAX_FILE_BYTES = 2 * 1024 * 1024
-MAX_TOTAL_BYTES = 6 * 1024 * 1024
-MAX_REQUEST_BYTES = MAX_TOTAL_BYTES + 1024 * 1024
+MAX_REQUEST_BYTES = MAX_FILE_BYTES + 1024 * 1024
 MAX_CSV_ROWS = 50_000
 MAX_PARTS = 12
 MAX_TITLE_LENGTH = 80
@@ -39,8 +40,6 @@ _RUN_LOCK = threading.Lock()
 
 FILE_FIELDS: dict[str, tuple[str, tuple[str, ...], str]] = {
     "transactions": ("Transactions CSV", TRANSACTION_COLUMNS, "transactions.csv"),
-    "profiles": ("Student profiles CSV", PROFILE_COLUMNS, "profiles.csv"),
-    "budgets": ("Budgets CSV", BUDGET_COLUMNS, "budgets.csv"),
 }
 
 
@@ -120,7 +119,6 @@ def parse_upload(content_type: str, body: bytes) -> UploadBundle:
     seen: set[str] = set()
     title = ""
     synthetic = False
-    total = 0
 
     for part in parts:
         if part.is_multipart():
@@ -146,12 +144,6 @@ def parse_upload(content_type: str, body: bytes) -> UploadBundle:
             original_name = _clean_filename(filename)
             if not original_name.lower().endswith(".csv"):
                 raise UploadError(f"{label} must be a .csv file.")
-            total += len(payload)
-            if total > MAX_TOTAL_BYTES:
-                raise UploadError(
-                    f"The three files together must be at most "
-                    f"{MAX_TOTAL_BYTES // (1024 * 1024)} MB."
-                )
             row_count = _inspect_csv(payload, label, columns)
             files[field] = UploadedCsv(
                 field=field,
@@ -179,7 +171,7 @@ def parse_upload(content_type: str, body: bytes) -> UploadBundle:
         raise UploadError("Add the missing file(s): " + ", ".join(missing) + ".")
     if not synthetic:
         raise UploadError(
-            "Confirm that the files contain only synthetic data before running analysis."
+            "Confirm that the file contains only synthetic data before running analysis."
         )
     return UploadBundle(title=title, files=files)
 
@@ -203,8 +195,8 @@ def create_analysis(bundle: UploadBundle) -> AnalysisWorkspace:
 
         options = PipelineOptions(
             transactions_csv=data_root / FILE_FIELDS["transactions"][2],
-            profiles_csv=data_root / FILE_FIELDS["profiles"][2],
-            budgets_csv=data_root / FILE_FIELDS["budgets"][2],
+            profiles_csv=None,
+            budgets_csv=None,
             db_path=db_path,
             reports_dir=report_dir,
             quarantine_dir=quarantine_dir,

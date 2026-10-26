@@ -8,7 +8,8 @@ CREATE TABLE IF NOT EXISTS students (
     student_id           TEXT    PRIMARY KEY,
     profile_label        TEXT    NOT NULL,
     campus               TEXT    NOT NULL,
-    study_year           INTEGER NOT NULL CHECK (study_year BETWEEN 1 AND 6),
+    -- 0 means the study year was not supplied (derived from a single CSV).
+    study_year           INTEGER NOT NULL CHECK (study_year BETWEEN 0 AND 6),
     monthly_income_cents INTEGER NOT NULL CHECK (monthly_income_cents >= 0)
 );
 

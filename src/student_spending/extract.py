@@ -163,6 +163,37 @@ def read_profiles(path: Path) -> list[dict[str, object]]:
     return profiles
 
 
+def derive_profiles(records: list[RawRecord]) -> list[dict[str, object]]:
+    """Build the smallest valid student dimension from transaction student IDs.
+
+    A single-file upload has no profile CSV. The transaction row is the source of
+    truth for which students exist; descriptive fields are left unknown rather
+    than invented. ``study_year`` 0 and income 0 mean "not supplied".
+    """
+    student_ids: set[str] = set()
+    for record in records:
+        if record.fields is None:
+            continue
+        student_id = record.fields.get("student_id", "").strip()
+        if student_id:
+            student_ids.add(student_id)
+    if not student_ids:
+        raise ExtractionError("no student_id values found in the transactions file")
+
+    profiles = [
+        {
+            "student_id": student_id,
+            "profile_label": student_id,
+            "campus": "Not provided",
+            "study_year": 0,
+            "monthly_income_cents": 0,
+        }
+        for student_id in sorted(student_ids)
+    ]
+    logger.info("derived %d student profile(s) from transaction rows", len(profiles))
+    return profiles
+
+
 def read_budgets(
     path: Path,
     known_students: set[str],

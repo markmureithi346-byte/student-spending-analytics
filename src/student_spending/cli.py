@@ -30,8 +30,8 @@ logger = logging.getLogger(__name__)
 @dataclass
 class PipelineOptions:
     transactions_csv: Path = config.DEFAULT_TRANSACTIONS_CSV
-    profiles_csv: Path = config.DEFAULT_PROFILES_CSV
-    budgets_csv: Path = config.DEFAULT_BUDGETS_CSV
+    profiles_csv: Path | None = config.DEFAULT_PROFILES_CSV
+    budgets_csv: Path | None = config.DEFAULT_BUDGETS_CSV
     db_path: Path = config.DEFAULT_DB_PATH
     reports_dir: Path = config.REPORTS_DIR
     quarantine_dir: Path = config.QUARANTINE_DIR
@@ -94,17 +94,23 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     load.start_run(connection, run_id, str(options.transactions_csv), started_at)
 
     try:
-        profiles = extract.read_profiles(options.profiles_csv)
+        raw_records = extract.extract_transactions(options.transactions_csv)
+        if options.profiles_csv is None:
+            profiles = extract.derive_profiles(raw_records)
+        else:
+            profiles = extract.read_profiles(options.profiles_csv)
         known_students = {str(profile["student_id"]) for profile in profiles}
         load.load_students(connection, profiles)
         load.ensure_categories(connection)
 
-        budgets, skipped_budgets = extract.read_budgets(
-            options.budgets_csv, known_students, set(config.ALLOWED_CATEGORIES)
-        )
-        load.load_budgets(connection, budgets)
+        if options.budgets_csv is None:
+            skipped_budgets = 0
+        else:
+            budgets, skipped_budgets = extract.read_budgets(
+                options.budgets_csv, known_students, set(config.ALLOWED_CATEGORIES)
+            )
+            load.load_budgets(connection, budgets)
 
-        raw_records = extract.extract_transactions(options.transactions_csv)
         validation = validate.validate_records(raw_records, known_students)
         for warning in validation.warnings:
             logger.warning("%s", warning)
@@ -242,8 +248,8 @@ def build_parser() -> argparse.ArgumentParser:
         "serve",
         help="start the interactive dashboard and upload workspace",
         description="Serve the dashboard and upload workspace on the local machine. "
-        "Existing warehouses are opened read-only; uploaded bundles are stored under "
-        "data/uploads/ and analysed in isolation.",
+        "Existing warehouses are opened read-only; an uploaded transactions CSV is "
+        "stored under data/uploads/ and analysed in isolation.",
     )
     serve_parser.add_argument(
         "--db",

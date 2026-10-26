@@ -2,15 +2,17 @@
 
 ## Raw inputs (`data/raw/`)
 
-All three files are synthetic. UTF-8 (BOM tolerated), comma-separated, first row is a
-header, dates are ISO `YYYY-MM-DD`.
+The three CLI input files are synthetic. UTF-8 (BOM tolerated), comma-separated, first
+row is a header, dates are ISO `YYYY-MM-DD`. The upload platform accepts only
+`student_expenses.csv`; it derives the student dimension from `student_id` and skips the
+budget comparison.
 
 ### `student_expenses.csv`
 
 | Column | Type | Required | Rules |
 |---|---|---|---|
 | `transaction_id` | text | yes | unique per transaction after cleaning; ≤ 64 chars |
-| `student_id` | text | yes | must exist in `student_profiles.csv` |
+| `student_id` | text | yes | must exist in the student dimension: an explicit profile or one derived from a transactions-only upload |
 | `transaction_date` | date | yes | `YYYY-MM-DD`, 2020-01-01 ≤ date ≤ today |
 | `amount_kes` | decimal | yes | > 0, ≤ 100,000.00; thousands separators and a `KES` prefix are tolerated |
 | `category` | text | yes | matched case-insensitively against the canonical list |
@@ -26,7 +28,7 @@ header, dates are ISO `YYYY-MM-DD`.
 | `student_id` | text | unique; primary key of the dimension |
 | `profile_label` | text | anonymized label such as `Profile A` |
 | `campus` | text | free text |
-| `study_year` | integer | 1–6 |
+| `study_year` | integer | 1–6 in an explicit profile file; `0` means not supplied (derived from a transactions-only upload) |
 | `monthly_income_kes` | decimal | ≥ 0, stored as `monthly_income_cents` |
 
 ### `student_budgets.csv`

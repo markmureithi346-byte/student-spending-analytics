@@ -22,26 +22,11 @@ from student_spending import cli, config, database, platform, web
 REPORT_SENTINEL = "<!DOCTYPE html><html><body>REPORT SENTINEL</body></html>"
 LOADED_AT = "2026-09-30T12:00:00+00:00"
 
-CLEAN_PROFILES = """student_id,profile_label,campus,study_year,monthly_income_kes
-STU-001,Profile A,Main Campus,1,30000
-STU-002,Profile B,Main Campus,2,21000
-"""
-
-CLEAN_BUDGETS = """student_id,budget_month,category,budget_kes
-STU-001,2026-07,Food,2000.00
-STU-001,2026-07,Education,1000.00
-"""
-
 CLEAN_TRANSACTIONS = """transaction_id,student_id,transaction_date,amount_kes,category,description,payment_method,merchant,is_recurring
 TXN-1001,STU-001,2026-07-01,300.00,Food,Tea,Cash,Campus Cafe,false
 TXN-1002,STU-001,2026-07-02,300.00,Food,Lunch,Cash,Campus Cafe,false
 TXN-1003,STU-001,2026-07-03,300.00,Food,Snack,Cash,Campus Cafe,false
 TXN-1004,STU-001,2026-07-04,400.00,Education,Book,Card,Bookshop,false
-"""
-
-SECOND_BUDGETS = """student_id,budget_month,category,budget_kes
-STU-002,2026-08,Food,2000.00
-STU-002,2026-08,Education,1200.00
 """
 
 SECOND_TRANSACTIONS = """transaction_id,student_id,transaction_date,amount_kes,category,description,payment_method,merchant,is_recurring
@@ -56,8 +41,8 @@ TXN-2003,STU-001,2026-07-03,300.00,Education,Notes,Cash,Bookshop,false
 TXN-2004,STU-001,2026-07-04,5000.00,Education,Laptop,Cash,Bookshop,false
 """
 
-UNKNOWN_TRANSACTIONS = """transaction_id,student_id,transaction_date,amount_kes,category,description,payment_method,merchant,is_recurring
-TXN-9001,STU-999,2026-07-01,300.00,Food,Tea,Cash,Campus Cafe,false
+NO_VALID_TRANSACTIONS = """transaction_id,student_id,transaction_date,amount_kes,category,description,payment_method,merchant,is_recurring
+TXN-9001,STU-999,2026-07-01,300.00,Groceries,Tea,Cash,Campus Cafe,false
 """
 
 
@@ -518,13 +503,9 @@ class UploadPlatformTests(unittest.TestCase):
     def csv_files(
         *,
         transactions: str = CLEAN_TRANSACTIONS,
-        profiles: str = CLEAN_PROFILES,
-        budgets: str = CLEAN_BUDGETS,
     ) -> dict[str, tuple[str, bytes]]:
         return {
             "transactions": ("transactions.csv", transactions.encode("utf-8")),
-            "profiles": ("profiles.csv", profiles.encode("utf-8")),
-            "budgets": ("budgets.csv", budgets.encode("utf-8")),
         }
 
     @staticmethod
@@ -564,10 +545,8 @@ class UploadPlatformTests(unittest.TestCase):
             add_text("synthetic", "yes")
         for name, value in extra or []:
             add_text(name, value)
-        for name in ("transactions", "profiles", "budgets"):
-            entry = files.get(name)
-            if entry is not None:
-                add_file(name, entry[0], entry[1])
+        for name, entry in files.items():
+            add_file(name, entry[0], entry[1])
         chunks.append(f"--{boundary}--\r\n".encode("utf-8"))
         return f"multipart/form-data; boundary={boundary}", b"".join(chunks)
 
@@ -631,14 +610,17 @@ class UploadPlatformTests(unittest.TestCase):
     def test_upload_page_and_home_link(self) -> None:
         status, _, page = self.fetch("/upload")
         self.assertEqual(status, 200)
-        for control in ("title", "transactions", "profiles", "budgets", "synthetic"):
+        for control in ("title", "transactions", "synthetic"):
             self.assertIn(f'name="{control}"', page)
+        self.assertNotIn('name="profiles"', page)
+        self.assertNotIn('name="budgets"', page)
         self.assertIn('enctype="multipart/form-data"', page)
         self.assertIn('action="/upload"', page)
         self.assertIn('href="/samples/student_expenses.csv"', page)
-        self.assertIn('href="/samples/student_profiles.csv"', page)
-        self.assertIn('href="/samples/student_budgets.csv"', page)
-        self.assertIn("2 MB per file", page)
+        self.assertNotIn("/samples/student_profiles.csv", page)
+        self.assertNotIn("/samples/student_budgets.csv", page)
+        self.assertIn("2 MB", page)
+        self.assertIn("No profiles or budgets file is required.", page)
         self.assertIn("Synthetic data only.", page)
 
         _, _, home = self.fetch("/")
@@ -653,8 +635,8 @@ class UploadPlatformTests(unittest.TestCase):
         self.assertTrue(body.startswith("transaction_id,student_id,"))
 
         status, _, body = self.fetch("/samples/student_profiles.csv")
-        self.assertEqual(status, 200)
-        self.assertTrue(body.startswith("student_id,profile_label,"))
+        self.assertEqual(status, 404)
+        self.assertIn("Sample not found", body)
 
         status, _, body = self.fetch("/samples/unknown.csv")
         self.assertEqual(status, 404)
@@ -669,8 +651,10 @@ class UploadPlatformTests(unittest.TestCase):
         analysis_id = self.upload_ok(title="Clean July analysis")
 
         data_root = Path(config.UPLOAD_DATA_DIR) / analysis_id
-        for name in ("transactions.csv", "profiles.csv", "budgets.csv", "metadata.json"):
+        for name in ("transactions.csv", "metadata.json"):
             self.assertTrue((data_root / name).is_file(), name)
+        self.assertFalse((data_root / "profiles.csv").exists())
+        self.assertFalse((data_root / "budgets.csv").exists())
         db_path = Path(config.UPLOAD_WAREHOUSE_DIR) / f"{analysis_id}.db"
         report_path = (
             Path(config.UPLOAD_REPORT_DIR) / analysis_id / "spending_report.html"
@@ -682,6 +666,7 @@ class UploadPlatformTests(unittest.TestCase):
         self.assertEqual(metadata["status"], "success")
         self.assertEqual(metadata["rows_accepted"], 4)
         self.assertEqual(metadata["title"], "Clean July analysis")
+        self.assertEqual(set(metadata["inputs"]), {"transactions"})
         self.assertEqual(metadata["inputs"]["transactions"]["rows"], 4)
 
         status, _, page = self.fetch(f"/?analysis={analysis_id}")
@@ -698,6 +683,7 @@ class UploadPlatformTests(unittest.TestCase):
         status, _, report_body = self.fetch(f"/report?analysis={analysis_id}")
         self.assertEqual(status, 200)
         self.assertIn("Student Spending Analytics Report", report_body)
+        self.assertIn("No budget plan was provided", report_body)
         self.assertNotIn("REPORT SENTINEL", report_body)
 
         status, _, csv_body = self.fetch(f"/export.csv?analysis={analysis_id}")
@@ -773,9 +759,8 @@ class UploadPlatformTests(unittest.TestCase):
 
     def test_validation_rejects_bad_forms(self) -> None:
         before = self.analysis_dirs()
-        good = self.csv_files()
-        missing_budgets = self.csv_files()
-        missing_budgets.pop("budgets")
+        unexpected_profile = self.csv_files()
+        unexpected_profile["profiles"] = ("profiles.csv", b"student_id\nSTU-001\n")
         bad_extension = self.csv_files()
         bad_extension["transactions"] = ("transactions.txt", b"a,b\n1,2\n")
         bad_header = self.csv_files(
@@ -799,12 +784,14 @@ class UploadPlatformTests(unittest.TestCase):
 
         cases = [
             ("missing confirmation", dict(synthetic=False), 400,
-             "Confirm that the files contain only synthetic data"),
+             "Confirm that the file contains only synthetic data"),
             ("duplicate title", dict(duplicate_title=True), 400,
              "appeared more than once"),
-            ("unexpected field", dict(extra=[("probe", "x")]), 400,
+            ("unexpected text field", dict(extra=[("probe", "x")]), 400,
              "Unexpected field"),
-            ("missing budgets", dict(files=missing_budgets), 400,
+            ("unexpected profile file", dict(files=unexpected_profile), 400,
+             "Unexpected field"),
+            ("missing transactions file", dict(files={}), 400,
              "Add the missing file"),
             ("wrong extension", dict(files=bad_extension), 400,
              "must be a .csv file"),
@@ -891,7 +878,7 @@ class UploadPlatformTests(unittest.TestCase):
         before_dirs = self.analysis_dirs()
         before_state = self.baseline_state()
         status, _, page = self.upload(
-            self.csv_files(transactions=UNKNOWN_TRANSACTIONS),
+            self.csv_files(transactions=NO_VALID_TRANSACTIONS),
             title="No clean rows",
         )
         self.assertEqual(status, 422, page[:300])
@@ -919,9 +906,7 @@ class UploadPlatformTests(unittest.TestCase):
     def test_two_uploads_stay_isolated(self) -> None:
         first = self.upload_ok(title="First dataset")
         second = self.upload_ok(
-            self.csv_files(
-                transactions=SECOND_TRANSACTIONS, budgets=SECOND_BUDGETS
-            ),
+            self.csv_files(transactions=SECOND_TRANSACTIONS),
             title="Second dataset",
         )
         self.assertNotEqual(first, second)

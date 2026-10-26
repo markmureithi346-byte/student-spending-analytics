@@ -119,10 +119,15 @@ def _headline(kpis: dict, categories: list[dict], budget: dict) -> str:
             f"<strong>{html.escape(str(top['category']))}</strong> takes the largest share"
             f" at {_percent(top['share_pct'])}."
         )
-    sentences.append(
-        f"{_int(budget['over_budget_lines'])} of {_int(budget['budget_lines'])} "
-        f"budget lines are over plan."
-    )
+    if budget["budget_lines"]:
+        sentences.append(
+            f"{_int(budget['over_budget_lines'])} of {_int(budget['budget_lines'])} "
+            f"budget lines are over plan."
+        )
+    else:
+        sentences.append(
+            "No budget plan was provided, so this report covers actual spending only."
+        )
     return " ".join(sentences)
 
 
@@ -303,21 +308,30 @@ def write_report(
         anchor="categories",
     )
 
-    budget_panel = _section(
-        "05", "Budgets", "Budget versus actual",
-        _table(
-            [("Profile", False), ("Month", False), ("Category", False),
-             ("Budget KES", True), ("Actual KES", True), ("Over by KES", True)],
-            overrun_rows,
-            row_classes=["over"] * len(overrun_rows),
-            empty_message="No category exceeded its budget.",
-        ),
-        lead=f"{_int(budget['over_budget_lines'])} of {_int(budget['budget_lines'])} "
-             f"budget lines are over plan. Planned KES {_money(budget['total_budget_kes'])} "
-             f"versus actual KES {_money(budget['total_actual_kes'])}. "
-             "The ten largest overruns are shown.",
-        anchor="budgets",
-    )
+    if budget["budget_lines"]:
+        budget_panel = _section(
+            "05", "Budgets", "Budget versus actual",
+            _table(
+                [("Profile", False), ("Month", False), ("Category", False),
+                 ("Budget KES", True), ("Actual KES", True), ("Over by KES", True)],
+                overrun_rows,
+                row_classes=["over"] * len(overrun_rows),
+                empty_message="No category exceeded its budget.",
+            ),
+            lead=f"{_int(budget['over_budget_lines'])} of {_int(budget['budget_lines'])} "
+                 f"budget lines are over plan. Planned KES {_money(budget['total_budget_kes'])} "
+                 f"versus actual KES {_money(budget['total_actual_kes'])}. "
+                 "The ten largest overruns are shown.",
+            anchor="budgets",
+        )
+    else:
+        budget_panel = _section(
+            "05", "Budgets", "Budget versus actual",
+            '<p class="section-note">No budget plan was provided for this analysis. '
+            "Actual spending is complete; variance needs a budgets file.</p>",
+            lead="Budget comparison is unavailable for a single-file upload.",
+            anchor="budgets",
+        )
 
     student_panel = _section(
         "06", "Students", "Student summary",

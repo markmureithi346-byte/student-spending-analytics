@@ -4,6 +4,31 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-10-26
+
+Simplifies the upload workspace to a single transactions CSV. Profiles and budgets are
+no longer requested by the browser form.
+
+### Added
+
+- `extract.derive_profiles`, which builds the student dimension from the distinct
+  `student_id` values in an upload.
+- A report state for analyses without budget data, stating that no plan was provided
+  instead of showing a zero-line comparison.
+- Pipeline support for `profiles_csv=None` and `budgets_csv=None`; the CLI still accepts
+  explicit files and keeps its 12 quality checks.
+
+### Changed
+
+- `/upload` now accepts one transactions CSV, one sample link and one synthetic-data
+  confirmation. Profile and budget inputs and sample links are gone.
+- Uploads run 11 quality checks; the budget-presence check is only recorded when budget
+  rows exist.
+- Derived profiles store `study_year = 0` and income `0` as "not supplied"; the schema
+  accepts 0 for this case.
+- Upload workspace metadata and files now contain only `transactions.csv`.
+- Release version is now `1.3.0`.
+
 ## [1.2.0] - 2026-10-26
 
 Turns the dashboard into an upload-and-analyze platform. A synthetic three-CSV bundle
