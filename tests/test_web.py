@@ -1091,7 +1091,7 @@ class MoneyPlanTests(unittest.TestCase):
             "synthetic",
             "category_name_1",
             "category_name_12",
-            "spending_date_24",
+            "spending_date_12",
         ):
             self.assertIn(f'name="{control}"', page)
         self.assertIn('action="/plan"', page)
@@ -1111,9 +1111,11 @@ class MoneyPlanTests(unittest.TestCase):
         self.assertEqual(body, "")
         self.assertGreater(int(headers["Content-Length"]), 0)
         self.assertIn('name="category_rows" value="12"', page)
-        self.assertIn('name="spending_rows" value="24"', page)
+        self.assertIn('name="spending_rows" value="12"', page)
         self.assertIn('aria-label="Add another category"', page)
+        self.assertIn('aria-label="Add another spending row"', page)
         self.assertIn("12 of 100 category rows", page)
+        self.assertIn("12 of 100 spending rows", page)
 
     def test_add_category_keeps_typed_values_without_saving(self) -> None:
         fields = self.plan_fields()
@@ -1132,6 +1134,25 @@ class MoneyPlanTests(unittest.TestCase):
         self.assertIn('value="Amina"', page)
         self.assertIn('value="Rent"', page)
         self.assertIn("13 of 100 category rows", page)
+        self.assertEqual(self.plan_files(), set())
+
+    def test_add_spending_keeps_typed_values_without_saving(self) -> None:
+        fields = self.plan_fields()
+        fields.extend(
+            [
+                ("category_rows", "12"),
+                ("spending_rows", "12"),
+                ("action", "add_spending"),
+            ]
+        )
+        status, _, page = self.post_form(fields)
+        self.assertEqual(status, 200)
+        self.assertIn('name="spending_date_13"', page)
+        self.assertNotIn('name="spending_date_14"', page)
+        self.assertIn('name="spending_rows" value="13"', page)
+        self.assertIn('value="Amina"', page)
+        self.assertIn('value="Notebook"', page)
+        self.assertIn("13 of 100 spending rows", page)
         self.assertEqual(self.plan_files(), set())
 
     def test_extra_category_rows_are_saved(self) -> None:
@@ -1153,21 +1174,46 @@ class MoneyPlanTests(unittest.TestCase):
         self.assertEqual(len(payload["categories"]), 13)
         self.assertEqual(payload["categories"][-1]["name"], "Category 13")
 
-    def test_hundred_category_rows_can_be_saved(self) -> None:
+    def test_spending_rows_stop_at_the_limit(self) -> None:
+        fields = self.plan_fields()
+        fields.extend(
+            [
+                ("category_rows", "12"),
+                ("spending_rows", "100"),
+                ("action", "add_spending"),
+            ]
+        )
+        status, _, page = self.post_form(fields)
+        self.assertEqual(status, 200)
+        self.assertIn('name="spending_date_100"', page)
+        self.assertNotIn('name="spending_date_101"', page)
+        self.assertIn("100 spending rows is the maximum.", page)
+        self.assertNotIn('aria-label="Add another spending row"', page)
+
+        fields[-2] = ("spending_rows", "999")
+        status, _, page = self.post_form(fields)
+        self.assertEqual(status, 200)
+        self.assertIn('name="spending_date_100"', page)
+        self.assertNotIn('name="spending_date_101"', page)
+
+    def test_maximum_rows_can_be_saved(self) -> None:
         categories = tuple(
             (f"Category {number}", "0", "flexible") for number in range(1, 101)
         )
-        fields = self.plan_fields(
-            categories=categories,
-            spendings=(("2026-10-01", "Category 1", "10", "Tea"),),
+        spendings = tuple(
+            ("2026-10-01", f"Category {number}", "10", f"Item {number}")
+            for number in range(1, 101)
         )
-        fields.extend([("category_rows", "100"), ("spending_rows", "24")])
+        fields = self.plan_fields(categories=categories, spendings=spendings)
+        fields.extend([("category_rows", "100"), ("spending_rows", "100")])
         plan_id = self.create_plan(fields)
 
         path = Path(config.PLAN_DATA_DIR) / f"{plan_id}.json"
         payload = json.loads(path.read_text(encoding="utf-8"))
         self.assertEqual(len(payload["categories"]), 100)
+        self.assertEqual(len(payload["spendings"]), 100)
         self.assertEqual(payload["categories"][-1]["name"], "Category 100")
+        self.assertEqual(payload["spendings"][-1]["category"], "Category 100")
 
     def test_category_rows_stop_at_the_limit(self) -> None:
         fields = self.plan_fields()

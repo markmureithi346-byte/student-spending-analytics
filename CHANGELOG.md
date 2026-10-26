@@ -4,6 +4,23 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.3] - 2026-10-26
+
+Adds the same **+** control to Spending, so both lists in the money plan start compact and
+grow on demand.
+
+### Changed
+
+- A **+** button beside the Spending heading adds one row per click, from 12 rows up to
+  100. Like the category control, it re-renders the draft through the server, keeps every
+  typed value and saves nothing until **Run my analysis**.
+- Spending now starts with 12 rows instead of 24, matching Categories. Both limits are
+  100, the row counters read "12 of 100 … rows", and each button becomes a maximum note
+  at the limit.
+- The form field cap rises from 600 to 800 so a plan with 100 categories and 100 spending
+  rows parses, and the release version is now `1.4.3`. Two new tests bring the suite to
+  133.
+
 ## [1.4.2] - 2026-10-26
 
 Turns the add-row control into a compact **+** button beside the Categories heading and

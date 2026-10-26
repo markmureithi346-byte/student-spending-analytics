@@ -1524,6 +1524,30 @@ def _spending_row(number: int, row: object) -> str:
       </div>"""
 
 
+def _add_row_control(
+    *,
+    section: str,
+    action: str,
+    noun: str,
+    rows: int,
+    maximum: int,
+    label: str,
+) -> str:
+    if rows >= maximum:
+        return (
+            f'<span class="section-note">{maximum} {noun} rows is the maximum.</span>'
+        )
+    return (
+        '<div class="plan-add">'
+        f'<span class="section-note">{rows} of {maximum} {noun} rows</span>'
+        '<button class="button ghost plan-add-button" type="submit" '
+        f'name="action" value="{action}" formaction="/plan#{section}" formnovalidate '
+        f'aria-label="{label}" title="{label}">'
+        '<span aria-hidden="true">+</span></button>'
+        "</div>"
+    )
+
+
 def render_plan_page(
     *,
     draft: PlanDraft | None = None,
@@ -1561,22 +1585,22 @@ def render_plan_page(
         if source is not None
         else '<a class="button ghost" href="/">Explore the sample dataset</a>'
     )
-    if category_rows < MAX_CATEGORIES:
-        add_category = (
-            '<div class="plan-add">'
-            f'<span class="section-note">{category_rows} of {MAX_CATEGORIES} '
-            "category rows</span>"
-            '<button class="button ghost plan-add-button" type="submit" '
-            'name="action" value="add_category" formaction="/plan#categories" '
-            'formnovalidate aria-label="Add another category" '
-            'title="Add another category"><span aria-hidden="true">+</span></button>'
-            "</div>"
-        )
-    else:
-        add_category = (
-            f'<span class="section-note">{MAX_CATEGORIES} category rows is the '
-            "maximum.</span>"
-        )
+    add_category = _add_row_control(
+        section="categories",
+        action="add_category",
+        noun="category",
+        rows=category_rows,
+        maximum=MAX_CATEGORIES,
+        label="Add another category",
+    )
+    add_spending = _add_row_control(
+        section="spending",
+        action="add_spending",
+        noun="spending",
+        rows=spending_rows,
+        maximum=MAX_SPENDINGS,
+        label="Add another spending row",
+    )
     body = f"""
 <main class="shell">
   <header class="hero dash-hero" id="top">
@@ -1661,9 +1685,13 @@ def render_plan_page(
 
     <section class="panel" id="spending" aria-labelledby="spending-title">
       <p class="eyebrow"><span class="section-no">03</span> Spending</p>
-      <h2 id="spending-title">What you actually spent</h2>
+      <div class="plan-title-row">
+        <h2 id="spending-title">What you actually spent</h2>
+        {add_spending}
+      </div>
       <p class="lead">One row per purchase or payment. Use a category name from above;
-        matching ignores capitalisation. Leave any row blank if you do not need it.</p>
+        matching ignores capitalisation. Use + to add more rows. Leave any row blank
+        if you do not need it.</p>
       <div class="plan-rows">
         <div class="plan-row-head spend-cols">
           <span>#</span><span>Date</span><span>Category</span>
@@ -2122,7 +2150,7 @@ class DashboardServer(ThreadingHTTPServer):
 
 class DashboardHandler(BaseHTTPRequestHandler):
     server: DashboardServer
-    server_version = "StudentSpendingDashboard/1.4.2"
+    server_version = "StudentSpendingDashboard/1.4.3"
     sys_version = ""
     timeout = 30
 
@@ -2282,8 +2310,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
         spending_rows = _form_row_count(
             form, "spending_rows", default=SPENDING_ROWS, maximum=MAX_SPENDINGS
         )
-        if _first(form, "action") == "add_category":
+        action = _first(form, "action")
+        if action == "add_category":
             category_rows = min(category_rows + 1, MAX_CATEGORIES)
+        elif action == "add_spending":
+            spending_rows = min(spending_rows + 1, MAX_SPENDINGS)
+        if action in ("add_category", "add_spending"):
             draft = read_draft(
                 form, category_rows=category_rows, spending_rows=spending_rows
             )
