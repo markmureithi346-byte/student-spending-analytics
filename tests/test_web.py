@@ -103,6 +103,45 @@ def _seed(db_path: Path) -> None:
     connection.close()
 
 
+def signup_cookie(
+    base: str,
+    *,
+    email: str = "demo@example.test",
+    name: str = "Demo Student",
+    password: str = "synthetic1",
+) -> str:
+    """Create a demo account over HTTP and return its session Cookie header."""
+    parsed = urllib.parse.urlsplit(base)
+    connection = http.client.HTTPConnection(parsed.hostname, parsed.port, timeout=60)
+    try:
+        body = urllib.parse.urlencode(
+            {
+                "display_name": name,
+                "email": email,
+                "password": password,
+                "confirm": password,
+                "demo_ack": "yes",
+            }
+        ).encode("utf-8")
+        connection.request(
+            "POST",
+            "/signup",
+            body=body,
+            headers={
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Origin": base,
+            },
+        )
+        response = connection.getresponse()
+        response.read()
+        if response.status != 303:
+            raise AssertionError(f"demo sign-up failed: {response.status}")
+        header = response.getheader("Set-Cookie") or ""
+        return header.split(";", 1)[0]
+    finally:
+        connection.close()
+
+
 class DashboardTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
@@ -113,7 +152,10 @@ class DashboardTests(unittest.TestCase):
         cls.report_path = cls.root / "spending_report.html"
         cls.report_path.write_text(REPORT_SENTINEL, encoding="utf-8")
         cls.server = web.create_server(
-            cls.db_path, port=0, report_path=cls.report_path
+            cls.db_path,
+            port=0,
+            report_path=cls.report_path,
+            accounts_path=cls.root / "accounts.db",
         )
         cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
         cls.thread.start()
@@ -459,12 +501,16 @@ class UploadPlatformTests(unittest.TestCase):
         )
         cls._config_patch.start()
         cls.server = web.create_server(
-            cls.db_path, port=0, report_path=cls.report_path
+            cls.db_path,
+            port=0,
+            report_path=cls.report_path,
+            accounts_path=cls.root / "accounts.db",
         )
         cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
         cls.thread.start()
         cls.port = cls.server.server_address[1]
         cls.base = f"http://127.0.0.1:{cls.port}"
+        cls.cookie = signup_cookie(cls.base)
 
     @classmethod
     def tearDownClass(cls) -> None:
@@ -475,7 +521,9 @@ class UploadPlatformTests(unittest.TestCase):
         cls._tmp.cleanup()
 
     def fetch(self, path: str, *, method: str = "GET") -> tuple[int, dict, str]:
-        request = urllib.request.Request(self.base + path, method=method)
+        request = urllib.request.Request(
+            self.base + path, method=method, headers={"Cookie": self.cookie}
+        )
         try:
             with urllib.request.urlopen(request, timeout=60) as response:
                 return (
@@ -496,7 +544,7 @@ class UploadPlatformTests(unittest.TestCase):
     ) -> tuple[int, dict, str]:
         connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=60)
         try:
-            request_headers = {"Content-Type": content_type}
+            request_headers = {"Content-Type": content_type, "Cookie": self.cookie}
             request_headers.update(headers or {})
             connection.request("POST", path, body=body, headers=request_headers)
             response = connection.getresponse()
@@ -862,7 +910,8 @@ class UploadPlatformTests(unittest.TestCase):
         with socket.create_connection(("127.0.0.1", self.port), timeout=10) as sock:
             sock.sendall(
                 b"POST /upload HTTP/1.1\r\nHost: 127.0.0.1\r\n"
-                b"Content-Type: multipart/form-data; boundary=x\r\n"
+                + f"Cookie: {self.cookie}\r\n".encode()
+                + b"Content-Type: multipart/form-data; boundary=x\r\n"
                 b"Connection: close\r\n\r\n"
             )
             raw = b""
@@ -961,12 +1010,16 @@ class MoneyPlanTests(unittest.TestCase):
         cls.report_path = cls.root / "baseline_report.html"
         cls.report_path.write_text(REPORT_SENTINEL, encoding="utf-8")
         cls.server = web.create_server(
-            cls.db_path, port=0, report_path=cls.report_path
+            cls.db_path,
+            port=0,
+            report_path=cls.report_path,
+            accounts_path=cls.root / "accounts.db",
         )
         cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
         cls.thread.start()
         cls.port = cls.server.server_address[1]
         cls.base = f"http://127.0.0.1:{cls.port}"
+        cls.cookie = signup_cookie(cls.base)
 
     @classmethod
     def tearDownClass(cls) -> None:
@@ -976,7 +1029,9 @@ class MoneyPlanTests(unittest.TestCase):
         cls._tmp.cleanup()
 
     def fetch(self, path: str, *, method: str = "GET") -> tuple[int, dict, str]:
-        request = urllib.request.Request(self.base + path, method=method)
+        request = urllib.request.Request(
+            self.base + path, method=method, headers={"Cookie": self.cookie}
+        )
         try:
             with urllib.request.urlopen(request, timeout=10) as response:
                 return (
@@ -1003,7 +1058,7 @@ class MoneyPlanTests(unittest.TestCase):
         )
         connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
         try:
-            request_headers = {"Content-Type": content_type}
+            request_headers = {"Content-Type": content_type, "Cookie": self.cookie}
             request_headers.update(headers or {})
             connection.request("POST", path, body=body, headers=request_headers)
             response = connection.getresponse()
@@ -1355,7 +1410,8 @@ class MoneyPlanTests(unittest.TestCase):
         with socket.create_connection(("127.0.0.1", self.port), timeout=10) as sock:
             sock.sendall(
                 b"POST /plan HTTP/1.1\r\nHost: 127.0.0.1\r\n"
-                b"Content-Type: application/x-www-form-urlencoded\r\n"
+                + f"Cookie: {self.cookie}\r\n".encode()
+                + b"Content-Type: application/x-www-form-urlencoded\r\n"
                 b"Connection: close\r\n\r\n"
             )
             raw = b""
@@ -1461,6 +1517,354 @@ class MoneyPlanTests(unittest.TestCase):
         self.assertIn("of the money available", page)
         self.assertIn("of the planned total", page)
         self.assertIn("adds up to exactly 100.0%", page)
+
+
+class AuthTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls._tmp = tempfile.TemporaryDirectory()
+        cls.root = Path(cls._tmp.name)
+        cls.db_path = cls.root / "fixture.db"
+        _seed(cls.db_path)
+        cls.report_path = cls.root / "spending_report.html"
+        cls.report_path.write_text(REPORT_SENTINEL, encoding="utf-8")
+        cls.accounts_db = cls.root / "accounts.db"
+        cls.server = web.create_server(
+            cls.db_path,
+            port=0,
+            report_path=cls.report_path,
+            accounts_path=cls.accounts_db,
+        )
+        cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
+        cls.thread.start()
+        cls.port = cls.server.server_address[1]
+        cls.base = f"http://127.0.0.1:{cls.port}"
+        cls.cookie = signup_cookie(
+            cls.base, email="member@example.test", name="Member Student"
+        )
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls.server.shutdown()
+        cls.server.server_close()
+        cls.thread.join(timeout=5)
+        cls._tmp.cleanup()
+
+    def setUp(self) -> None:
+        self.server.login_attempts.clear("127.0.0.1")
+
+    def request(
+        self,
+        method: str,
+        path: str,
+        *,
+        fields: dict[str, str] | None = None,
+        headers: dict[str, str] | None = None,
+        body: bytes | None = None,
+    ) -> tuple[int, dict, str]:
+        connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=30)
+        try:
+            request_headers = dict(headers or {})
+            if fields is not None or body is not None:
+                request_headers.setdefault(
+                    "Content-Type", "application/x-www-form-urlencoded"
+                )
+            payload = (
+                urllib.parse.urlencode(fields).encode("utf-8")
+                if fields is not None
+                else body
+            )
+            connection.request(method, path, body=payload, headers=request_headers)
+            response = connection.getresponse()
+            text = response.read().decode("utf-8", "replace")
+            return (
+                response.status,
+                {name.lower(): value for name, value in response.getheaders()},
+                text,
+            )
+        finally:
+            connection.close()
+
+    def signup_fields(self, **overrides: str) -> dict[str, str]:
+        fields = {
+            "display_name": "New Student",
+            "email": "new@example.test",
+            "password": "synthetic1",
+            "confirm": "synthetic1",
+            "demo_ack": "yes",
+        }
+        fields.update(overrides)
+        return fields
+
+    def login_fields(self, **overrides: str) -> dict[str, str]:
+        fields = {"email": "member@example.test", "password": "synthetic1"}
+        fields.update(overrides)
+        return fields
+
+    def account_rows(self) -> list[sqlite3.Row]:
+        connection = sqlite3.connect(self.accounts_db)
+        connection.row_factory = sqlite3.Row
+        try:
+            return connection.execute(
+                "SELECT display_name, email, password_hash FROM accounts ORDER BY email"
+            ).fetchall()
+        finally:
+            connection.close()
+
+    def test_login_and_signup_pages_render_forms(self) -> None:
+        status, headers, page = self.request("GET", "/login")
+        self.assertEqual(status, 200)
+        self.assertEqual(headers["cache-control"], "no-store")
+        self.assertIn("default-src 'none'", headers["content-security-policy"])
+        for text in (
+            'action="/login"',
+            'name="email"',
+            'name="password"',
+            'name="next"',
+            'href="/signup?next=%2Fplan"',
+            "Demo only",
+        ):
+            self.assertIn(text, page)
+
+        status, _, page = self.request("GET", "/signup")
+        self.assertEqual(status, 200)
+        for text in (
+            'action="/signup"',
+            'name="display_name"',
+            'name="email"',
+            'name="password"',
+            'name="confirm"',
+            'name="demo_ack"',
+            "local demo identity",
+            "never enter real account, card or payment credentials",
+        ):
+            self.assertIn(text, page)
+
+    def test_signin_pages_redirect_a_signed_in_account(self) -> None:
+        status, headers, _ = self.request(
+            "GET", "/login?next=/upload", headers={"Cookie": self.cookie}
+        )
+        self.assertEqual(status, 303)
+        self.assertEqual(headers["location"], "/upload")
+
+        status, headers, _ = self.request(
+            "GET", "/signup?next=/", headers={"Cookie": self.cookie}
+        )
+        self.assertEqual(status, 303)
+        self.assertEqual(headers["location"], "/")
+
+    def test_signup_creates_hashed_account_and_session_cookie(self) -> None:
+        status, headers, _ = self.request("POST", "/signup", fields=self.signup_fields())
+        self.assertEqual(status, 303)
+        self.assertEqual(headers["location"], "/plan")
+        cookie = headers["set-cookie"]
+        self.assertIn("ssa_session=", cookie)
+        self.assertIn("HttpOnly", cookie)
+        self.assertIn("SameSite=Strict", cookie)
+        self.assertIn("Path=/", cookie)
+        self.assertIn("Max-Age=28800", cookie)
+
+        rows = {row["email"]: row for row in self.account_rows()}
+        self.assertIn("new@example.test", rows)
+        stored = rows["new@example.test"]["password_hash"]
+        self.assertTrue(stored.startswith("scrypt$16384$8$1$"))
+        self.assertNotIn("synthetic1", stored)
+        self.assertEqual(rows["new@example.test"]["display_name"], "New Student")
+
+        session_cookie = cookie.split(";", 1)[0]
+        status, _, page = self.request(
+            "GET", "/plan", headers={"Cookie": session_cookie}
+        )
+        self.assertEqual(status, 200)
+        self.assertIn("Signed in as", page)
+        self.assertIn("New Student", page)
+
+    def test_signup_validation_preserves_fields_and_rejects_duplicates(self) -> None:
+        status, headers, page = self.request(
+            "POST",
+            "/signup",
+            fields=self.signup_fields(
+                email="broken@example.test",
+                password="short",
+                confirm="different",
+                demo_ack="",
+            ),
+        )
+        self.assertEqual(status, 422)
+        self.assertNotIn("set-cookie", headers)
+        for text in (
+            "at least 8 characters",
+            "two passwords do not match",
+            "Confirm that this is a demo account",
+            'value="New Student"',
+            'value="broken@example.test"',
+        ):
+            self.assertIn(text, page)
+
+        status, _, page = self.request(
+            "POST",
+            "/signup",
+            fields=self.signup_fields(email="MEMBER@example.test", name="Clash"),
+        )
+        self.assertEqual(status, 422)
+        self.assertIn("already exists", page)
+        self.assertEqual(
+            sum(1 for row in self.account_rows() if row["email"] == "member@example.test"),
+            1,
+        )
+
+        status, _, page = self.request(
+            "POST", "/signup", fields=self.signup_fields(email="not-an-email")
+        )
+        self.assertEqual(status, 422)
+        self.assertIn("does not look valid", page)
+
+    def test_signin_rejects_bad_credentials_without_a_cookie(self) -> None:
+        status, headers, page = self.request(
+            "POST", "/login", fields=self.login_fields(password="wrongpass1")
+        )
+        self.assertEqual(status, 401)
+        self.assertNotIn("set-cookie", headers)
+        self.assertIn("did not match", page)
+
+        status, headers, page = self.request(
+            "POST",
+            "/login",
+            fields=self.login_fields(email="nobody@example.test", password="wrongpass1"),
+        )
+        self.assertEqual(status, 401)
+        self.assertNotIn("set-cookie", headers)
+        self.assertIn("did not match", page)
+        self.assertNotIn("unknown account", page.lower())
+
+        status, headers, page = self.request(
+            "POST", "/login", fields={"email": "", "password": ""}
+        )
+        self.assertEqual(status, 422)
+        self.assertNotIn("set-cookie", headers)
+        self.assertIn("Enter both the email and the password", page)
+
+    def test_signin_sets_cookie_and_only_follows_safe_next_paths(self) -> None:
+        status, headers, _ = self.request(
+            "POST", "/login", fields=self.login_fields(next="/upload")
+        )
+        self.assertEqual(status, 303)
+        self.assertEqual(headers["location"], "/upload")
+        self.assertIn("ssa_session=", headers["set-cookie"])
+
+        for unsafe in ("//evil.example", "https://evil.example", "/missing"):
+            with self.subTest(next=unsafe):
+                status, headers, _ = self.request(
+                    "POST", "/login", fields=self.login_fields(next=unsafe)
+                )
+                self.assertEqual(status, 303)
+                self.assertEqual(headers["location"], "/plan")
+
+    def test_anonymous_requests_to_personal_tools_are_gated(self) -> None:
+        for path in ("/plan", "/upload"):
+            with self.subTest(path=path):
+                status, headers, _ = self.request("GET", path)
+                self.assertEqual(status, 303)
+                self.assertEqual(
+                    headers["location"],
+                    f"/login?next={urllib.parse.quote(path, safe='')}",
+                )
+
+        status, headers, _ = self.request(
+            "POST", "/plan", fields={"student_name": "Amina"}
+        )
+        self.assertEqual(status, 303)
+        self.assertIn("next=%2Fplan", headers["location"])
+        self.assertEqual(headers.get("connection", "").lower(), "close")
+
+        status, headers, _ = self.request("POST", "/upload", body=b"")
+        self.assertEqual(status, 303)
+        self.assertIn("next=%2Fupload", headers["location"])
+
+        status, _, page = self.request("GET", "/")
+        self.assertEqual(status, 200)
+        self.assertIn("Demo mode", page)
+        self.assertIn('href="/login"', page)
+        self.assertIn('href="/signup"', page)
+
+        status, _, page = self.request("GET", "/report")
+        self.assertEqual(status, 200)
+        self.assertIn("REPORT SENTINEL", page)
+
+    def test_logout_clears_the_session_and_cookie(self) -> None:
+        _, headers, _ = self.request(
+            "POST",
+            "/signup",
+            fields=self.signup_fields(email="leaver@example.test"),
+        )
+        cookie = headers["set-cookie"].split(";", 1)[0]
+
+        status, headers, _ = self.request(
+            "POST",
+            "/logout",
+            fields={},
+            headers={"Cookie": cookie, "Origin": self.base},
+        )
+        self.assertEqual(status, 303)
+        self.assertEqual(headers["location"], "/login?signedout=1")
+        self.assertIn("Max-Age=0", headers["set-cookie"])
+
+        status, headers, _ = self.request("GET", "/plan", headers={"Cookie": cookie})
+        self.assertEqual(status, 303)
+        self.assertIn("/login?next=", headers["location"])
+
+        _, _, page = self.request("GET", "/login?signedout=1")
+        self.assertIn("You are signed out", page)
+
+        status, _, page = self.request(
+            "POST",
+            "/logout",
+            fields={},
+            headers={"Cookie": self.cookie, "Origin": "http://evil.example"},
+        )
+        self.assertEqual(status, 403)
+        self.assertIn("own form", page)
+
+    def test_forged_and_expired_sessions_are_rejected(self) -> None:
+        forged = "ssa_session=" + "x" * 43
+        status, headers, _ = self.request("GET", "/plan", headers={"Cookie": forged})
+        self.assertEqual(status, 303)
+        self.assertIn("/login?next=", headers["location"])
+
+        account = self.server.accounts.create_account(
+            "Expiry Student", "expiry@example.test", "synthetic1"
+        )
+        token = self.server.accounts.create_session(account.account_id)
+        connection = sqlite3.connect(self.accounts_db)
+        try:
+            with connection:
+                connection.execute(
+                    "UPDATE sessions SET expires_at = '2000-01-01T00:00:00+00:00' "
+                    "WHERE account_id = ?",
+                    (account.account_id,),
+                )
+        finally:
+            connection.close()
+
+        status, headers, _ = self.request(
+            "GET", "/plan", headers={"Cookie": f"ssa_session={token}"}
+        )
+        self.assertEqual(status, 303)
+        self.assertIn("/login?next=", headers["location"])
+
+    def test_repeated_signin_failures_are_rate_limited(self) -> None:
+        fields = self.login_fields(email="nobody@example.test", password="wrongpass1")
+        for _ in range(web.AUTH_ATTEMPT_LIMIT):
+            status, _, _ = self.request("POST", "/login", fields=fields)
+            self.assertEqual(status, 401)
+
+        status, headers, page = self.request("POST", "/login", fields=fields)
+        self.assertEqual(status, 429)
+        self.assertEqual(
+            headers["retry-after"], str(web.AUTH_ATTEMPT_WINDOW_SECONDS)
+        )
+        self.assertIn("Too many sign-in attempts", page)
+        self.assertNotIn("set-cookie", headers)
 
 
 if __name__ == "__main__":

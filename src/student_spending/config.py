@@ -33,6 +33,7 @@ LOG_DIR = PROJECT_ROOT / "logs"
 SCHEMA_PATH = PROJECT_ROOT / "sql" / "schema.sql"
 
 DEFAULT_DB_PATH = WAREHOUSE_DIR / "student_spending.db"
+ACCOUNTS_DB_PATH = PROJECT_ROOT / "data" / "accounts.db"
 DEFAULT_TRANSACTIONS_CSV = RAW_DATA_DIR / "student_expenses.csv"
 DEFAULT_PROFILES_CSV = RAW_DATA_DIR / "student_profiles.csv"
 DEFAULT_BUDGETS_CSV = RAW_DATA_DIR / "student_budgets.csv"

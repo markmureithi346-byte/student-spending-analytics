@@ -25,6 +25,7 @@ useful to whoever maintains this project next — including future me.
 | 15. Single-file upload | done | one transactions CSV, derived students, budget variance skipped, 95 tests |
 | 16. Per-student money plan | done | `personal.py`, `/plan`, user-defined categories, add-row controls, analysis rendered in-page without saved plans |
 | 17. Exact shares, receipt and dark theme | done | largest-remainder shares in the planner, dashboard and report, inline printable receipt placed directly under the analysis, drifting-spark dark-purple backdrop, 138 tests, browser-checked at 1440 px and 390 px |
+| 18. Local demo accounts | done | `accounts.py`, `/signup`, `/login`, `/logout`, scrypt hashes, hashed session tokens, gated `/plan` and `/upload` with the sample dashboard still public, 157 tests, browser-checked at 1440 px, 1280 px and 390 px |
 
 ## Decisions worth remembering
 
@@ -141,6 +142,32 @@ useful to whoever maintains this project next — including future me.
   and buried the controls; one row matches how a student fills a notebook. The minimum
   stays two categories and one spending row, so the validation message still teaches the
   requirement instead of the layout hiding it.
+- **Accounts gate the personal tools; they do not own the showcase.** The sample dashboard
+  and report stay public because they are the project's portfolio, while `/plan` and
+  `/upload` ask for a session because they represent one student's workspace. Gating
+  everything would have hidden the demo behind a form; gating nothing would have made the
+  new sign-in pages decorative.
+- **Passwords are hashed, sessions are hashed, and neither is reversible.** `hashlib.scrypt`
+  with a per-account random salt makes the stored value useless without the password, and
+  `hmac.compare_digest` avoids a timing oracle. The cookie carries a random token while
+  SQLite stores only its SHA-256 digest, so reading `data/accounts.db` does not hand out
+  live sessions. There is no secret key to configure, which suits a zero-dependency demo.
+- **Login errors are deliberately vague.** One message covers an unknown email, a wrong
+  password and a missing account, and an unknown email is still verified against a cached
+  dummy hash. The point is to avoid becoming an account-enumeration oracle, not to be
+  unhelpful: the message still tells the student what to do next.
+- **A `next` parameter is an open-redirect risk.** `_safe_next` accepts only `/`, `/plan`
+  and `/upload` with a re-encoded query, and rejects absolute URLs, protocol-relative URLs
+  and anything longer than 200 characters. A sign-in page that redirects anywhere is a
+  phishing tool, even on loopback.
+- **The password field never comes back in an error.** Validation errors re-render the
+  display name and email so the student does not retype them, but password fields are
+  always blank. Repopulating them would put the secret into the HTML and the browser's
+  form history for no benefit.
+- **Rate limiting is small and in memory.** Eight failures per address in five minutes
+  returns `429` with `Retry-After`, and a successful login clears the counter. It is not a
+  distributed defence, but it makes scripted guessing against one mailbox slow enough to
+  notice; a production service would use a shared store and account-level throttling.
 
 ## Bugs hit during development
 
@@ -297,6 +324,29 @@ useful to whoever maintains this project next — including future me.
     *Lesson:* a theme is not finished until the reduced-motion and print variants are
     checked, not just the default screen.
 
+23. **The session-expiry test invalidated every other test in the class.** The first draft
+    expired all sessions to prove the check worked, which also expired the shared cookie
+    that the already-signed-in planner and upload tests relied on.
+    *Fix:* create a separate account for the expiry case and expire only that account's
+    sessions; the shared cookie stays valid.
+    *Lesson:* a test that mutates shared setup state must either isolate the state or run
+    last by design, not by luck.
+
+24. **The new auth feature contradicted the page copy.** The planner still said "no login
+    is involved", the upload page still said "There is no login, so keep the server on
+    loopback", and the footer claimed no credential field existed — all written before
+    accounts existed. The tests passed because they asserted structure, not those sentences.
+    *Fix:* update every copy block and recapture the screenshots; add the missing
+    account description to the README limitations instead of leaving a false promise.
+    *Lesson:* a feature is not shipped until the prose around it stops describing the old
+    product. Grep for the old claim, not just for the new feature.
+
+25. **The auth pages floated at the top of tall screens.** Content was correct but a tall
+    desktop viewport left a large empty band below the card, which made the page look
+    broken. *Fix:* make `.auth-shell` a flex column with `min-height: calc(100vh - 102px)`
+    and `justify-content: center`, then verify at 1440 px and 390 px. *Lesson:* vertical
+    composition needs a viewport rule, not just sensible margins.
+
 ## Concepts this project exercises
 
 Extraction boundaries; per-row error isolation; normalisation vs validation; policy for
@@ -312,8 +362,12 @@ formula injection; user-defined taxonomies and case-insensitive canonical keys; 
 redirect/GET; unguessable resource ids as capability links; JSON persistence with a
 strict reload path; grouped SVG charts; no-JavaScript draft round-trips for dynamic form
 rows; largest-remainder rounding for displayed shares; CSS-only background and receipt
-animation with reduced-motion and print fallbacks; and the difference between "valid" and
-"unusual".
+animation with reduced-motion and print fallbacks; password hashing with scrypt and
+random salts; constant-time comparison; hashed session tokens; HttpOnly and SameSite
+cookies; session expiry and logout; same-origin checks on writes; safe redirect
+allow-lists against open redirects; generic authentication errors; timing equalisation
+with a dummy hash; in-memory rate limiting with `Retry-After`; and the difference between
+"valid" and "unusual".
 
 ## Next exercises (for the learner, not the pipeline)
 

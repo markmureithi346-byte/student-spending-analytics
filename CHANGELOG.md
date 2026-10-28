@@ -4,6 +4,51 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.0] - 2026-10-29
+
+Adds local demo accounts, so the money planner and the CSV upload sit behind a sign-in
+without any external identity service or real credentials.
+
+### Added
+
+- `/signup` creates a local demo account from a display name, a made-up email and a
+  password, then signs the visitor in and returns them to the page they asked for.
+- `/login` and `/logout`. Sessions last eight hours, are stored in `data/accounts.db`
+  beside the warehouse, and are deleted on sign-out.
+- An account bar on every page: **Demo mode · sample dashboard** with **Sign in** and
+  **Create account** links when signed out, the display name and a **Sign out** button
+  when signed in.
+- `accounts.py`: scrypt password hashing (N=16384, r=8, p=1, random 16-byte salt),
+  constant-time verification, SHA-256 session-token digests, expiry cleanup, and
+  case-insensitive unique emails.
+- Sign-in throttling: eight failures from one address within five minutes return `429`
+  with `Retry-After: 300`; a successful sign-in clears the counter.
+- Sign-in and sign-up screenshots at desktop and phone width, plus a README section
+  describing the account model.
+
+### Changed
+
+- `/plan` and `/upload` now require a session. Anonymous GETs redirect to the sign-in
+  page with a safe `next` path; anonymous form posts are refused. The sample dashboard,
+  report, CSV export and sample files remain public.
+- Same-origin checks now also cover the three account POST routes, and auth forms are
+  size-limited to 16 KB.
+- Sign-up errors preserve the display name and email but never re-render a password.
+- `serve` prints the accounts database path and warns when it is bound beyond loopback,
+  because demo accounts are not internet-grade.
+- Planner, upload and footer copy no longer claims there is no login; the planner says
+  the account only unlocks the form and that the plan itself is still not saved.
+
+### Security
+
+- Passwords are never stored or logged in plaintext, and login failures deliberately do
+  not reveal whether the email or the password was wrong. Unknown emails are checked
+  against a cached dummy hash so they do not answer faster than a wrong password.
+- Session cookies are `HttpOnly` and `SameSite=Strict`; `next` redirects are restricted to
+  `/`, `/plan` and `/upload` to avoid an open redirect.
+
+Release version is now `2.3.0`; the suite is 157 tests.
+
 ## [2.2.0] - 2026-10-26
 
 Brings the receipt forward as the first summary after the analysis and makes the

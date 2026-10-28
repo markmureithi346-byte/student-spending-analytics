@@ -12,6 +12,10 @@ with planned-versus-actual totals, exact category shares, inline SVG charts and 
 printable receipt. The planner is local, needs no JavaScript and never asks for bank or
 card credentials.
 
+A local demo account unlocks the planner and the CSV upload. Signing up needs only a
+display name, a made-up email and a password; the sample dashboard and report stay open
+without signing in.
+
 Built as a learning project: the code is intentionally module-by-module and documented
 so the reasoning behind each stage is visible.
 
@@ -60,6 +64,7 @@ data/raw/*.csv
       ├── report.py       reports/spending_report.html (charts + tables from SQL)
       │
       ├── web.py          student-spending serve → dashboard + upload + money plan
+      ├── accounts.py     local demo accounts, scrypt hashes and sessions (data/accounts.db)
       ├── platform.py     validate one upload, run it in an isolated workspace
       └── personal.py     validate one student money plan and analyse it in the page
 ```
@@ -67,6 +72,7 @@ data/raw/*.csv
 The report and the dashboard read the same SQL views; neither computes its own totals.
 The money planner is separate: it analyses only the values the student submits and
 renders the result in the same page, so it never writes to the warehouse or to disk.
+Demo accounts live in their own small database, apart from the warehouse.
 
 Every row read from the CSV must be accounted for:
 
@@ -100,14 +106,16 @@ virtual environment.
 ```powershell
 python scripts\generate_synthetic_data.py     # writes data/raw/*.csv
 student-spending --full-refresh               # deletes the warehouse, then rebuilds it
-python run_tests.py                           # 138 tests
+python run_tests.py                           # 157 tests
 start reports\spending_report.html
 student-spending serve --open                 # local server; blocks until Ctrl+C
 ```
 
 Open `http://127.0.0.1:8000/` for the sample dashboard,
 `http://127.0.0.1:8000/plan` to plan one student's money, or
-`http://127.0.0.1:8000/upload` to analyze a synthetic transactions CSV.
+`http://127.0.0.1:8000/upload` to analyze a synthetic transactions CSV. The planner and
+upload ask you to sign in first; create a local demo account at
+`http://127.0.0.1:8000/signup` with any made-up email.
 
 Omit `--full-refresh` to rerun against the existing warehouse. Because loading is
 upsert-based and change-detected, a rerun inserts nothing and updates nothing.
@@ -149,9 +157,54 @@ the integration tests. The full run log is also written to `logs/pipeline.log`.
 | `--open` | off | open the dashboard in the default browser |
 
 `serve` hosts the sample dashboard at `/`, the CSV upload at `/upload` and the
-one-student money planner at `/plan`. It refuses to start when the warehouse is missing,
-unreadable or empty, and prints the rebuild command instead of serving a broken page.
-Stop it with Ctrl+C.
+one-student money planner at `/plan`, plus the account pages `/signup`, `/login` and
+`/logout`. It refuses to start when the warehouse is missing, unreadable or empty, and
+prints the rebuild command instead of serving a broken page. Stop it with Ctrl+C.
+Demo accounts are stored in `data/accounts.db`, created on first use and separate from
+the warehouse.
+
+## Local demo accounts
+
+![Sign in](docs/images/login.png)
+
+The sample dashboard, report and CSV export stay public. The two personal tools — the
+money planner at `/plan` and the CSV upload at `/upload` — sit behind a local demo
+account, so the workspace behaves like a real product without collecting anything real.
+The dashboard shows **Demo mode · sample dashboard** with **Sign in** and
+**Create account** links; after signing in it shows your display name and a **Sign out**
+button on every page.
+
+- `/signup` creates an account from a display name, a made-up email and a password,
+  then signs you in and returns you to the page you originally asked for.
+- `/login` starts an eight-hour session and honours a same-site `next` path.
+- `/logout` is a POST form that deletes the session and clears the cookie.
+
+Accounts live in `data/accounts.db`, a small local SQLite file that is git-ignored.
+Passwords are hashed with `hashlib.scrypt` (N=16384, r=8, p=1, a random 16-byte salt)
+and compared with `hmac.compare_digest`; the stored value has the form
+`scrypt$16384$8$1$<salt>$<digest>`, and the plaintext is never written. Session tokens
+are random 32-byte URL-safe strings, but the database keeps only their SHA-256 digest,
+so a copy of the file cannot be replayed as a login cookie. The cookie is `HttpOnly`
+and `SameSite=Strict`, no JavaScript reads it, and it expires after eight hours. Eight
+failed sign-ins from one address within five minutes return `429` with `Retry-After`
+instead of allowing unlimited guesses. A failed login says only that the email and
+password did not match, and an unknown email is checked against a dummy hash so it does
+not answer measurably faster than a wrong password.
+
+Sign-up asks you to confirm that every value is made up. Do not enter a real student
+identity, a real email password or any bank, card or payment credentials: this is a
+teaching demo, not an identity service. It runs on loopback HTTP, so the cookie is not
+marked `Secure`; the server warns when it is bound beyond loopback because these demo
+accounts are not internet-grade.
+
+![Create account](docs/images/signup.png)
+
+At phone width the auth card and its explainer stack into a single column, with the
+form first.
+
+![Sign in at phone width](docs/images/login-mobile.png)
+
+![Create account at phone width](docs/images/signup-mobile.png)
 
 ## What a run produces (verified output of this repository)
 
@@ -290,10 +343,12 @@ Display shares use the largest-remainder method on the planner, dashboard breakd
 report, so one-decimal values add up to exactly 100.0% instead of drifting to 100.1%
 when several categories are equal.
 
-Because nothing is stored, there is no link to keep and no file to clean up. Adjust any
-value and run the analysis again; the page always reflects the form in front of you.
-There is no account, login, bank connection or credential field; the only write endpoints
-are `POST /upload` and `POST /plan`, and `POST /plan` writes nothing beyond the response.
+Because the plan itself is not stored, there is no link to keep and no file to clean up.
+Adjust any value and run the analysis again; the page always reflects the form in front
+of you. The account is only a gate: it is needed to open `/plan`, but the plan is still
+analysed in the response and nothing beyond the account row is saved. There is no bank
+connection or credential field anywhere; the write paths are `POST /upload`, `POST /plan`
+and the three account forms.
 
 ![Money plan at phone width](docs/images/plan-mobile.png)
 
@@ -366,11 +421,13 @@ Uploaded files are saved locally and are never sent to a remote service.
 At phone width the form stacks into one column and the history card moves below it, so
 neither the input nor the limits are pushed off-screen.
 
-`POST /upload` and `POST /plan` are the only write paths. Requests are checked against
-`Origin` and `Sec-Fetch-Site` to block cross-site form posts, and the server keeps the
-`same-origin` referrer policy so a real browser sends a verifiable origin while still
-not leaking URLs to other sites. Uploads and plan submissions are size-limited, and the
-planner keeps no plan ids or files. There is no login, so keep the server on loopback.
+`POST /upload`, `POST /plan`, `POST /login`, `POST /signup` and `POST /logout` are the
+write paths. Every one is checked against `Origin` and `Sec-Fetch-Site` to block
+cross-site form posts, and the server keeps the `same-origin` referrer policy so a real
+browser sends a verifiable origin while still not leaking URLs to other sites. Uploads,
+plans and account forms are size-limited, and the planner keeps no plan ids or files.
+The upload and planner pages require a demo session; the sample dashboard stays public.
+Keep the server on loopback, because these demo accounts are not internet-grade.
 
 ## Dashboard
 
@@ -406,10 +463,10 @@ The server binds to `127.0.0.1` by default, opens SQLite with `mode=ro` **and**
 `PRAGMA query_only = ON`, and opens a short-lived connection per request. It sends a
 restrictive Content-Security-Policy, `nosniff`, `no-store` and a `same-origin` referrer
 policy, escapes all database text into HTML, and prefixes spreadsheet-formula characters
-in CSV exports. The dashboard itself is read-only: the only write endpoints are
-`POST /upload` (which starts an isolated pipeline run) and `POST /plan` (which analyses a
-submitted plan and writes only the response). There is no login and the server serves no
-arbitrary files.
+in CSV exports. The dashboard itself is read-only: the write endpoints are
+`POST /upload` (which starts an isolated pipeline run), `POST /plan` (which analyses a
+submitted plan and writes only the response) and the account routes that create
+sessions. The server serves no arbitrary files.
 
 ![Dashboard at phone width](docs/images/dashboard-mobile.png)
 
@@ -439,13 +496,14 @@ student-spending-analytics/
 │   ├── raw/                  committed synthetic inputs (3 CSV files)
 │   ├── uploads/              isolated copies of uploaded analyses (git-ignored)
 │   ├── quarantine/           generated rejection audit CSVs (git-ignored)
-│   └── processed/            reserved for future exports (git-ignored)
+│   ├── processed/            reserved for future exports (git-ignored)
+│   └── accounts.db           local demo accounts and sessions (git-ignored)
 ├── docs/                     data dictionary, quality policy, learning log
 ├── reports/                  generated HTML report; uploads/ per analysis (git-ignored)
 ├── scripts/                  generate_synthetic_data.py, check_env.py
 ├── sql/                      schema.sql, example_queries.sql
-├── src/student_spending/     pipeline, report, platform, dashboard and plan modules
-├── tests/                    138 unittest cases
+├── src/student_spending/     pipeline, report, platform, accounts, dashboard and plan modules
+├── tests/                    157 unittest cases
 ├── warehouse/                generated SQLite database; uploads/ per analysis (git-ignored)
 ├── logs/                     pipeline.log (git-ignored)
 ├── pyproject.toml            package metadata, console script, build config
@@ -528,7 +586,7 @@ python run_tests.py
 python -m unittest discover -s tests -t . -v
 ```
 
-138 tests covering: extraction failures and malformed rows, derived and explicit student
+157 tests covering: extraction failures and malformed rows, derived and explicit student
 dimensions, every validation rule, normalisation, duplicate handling, reconciliation
 accounting, idempotent loading, foreign keys and CHECK constraints, analytics totals and
 shares, anomaly flagging, all quality checks, end-to-end pipeline runs including rerun
@@ -558,6 +616,17 @@ links, two-upload isolation, quality-failure alerts, cleanup after a 422, cross-
 and `Origin: null` rejection, traversal-resistant analysis ids, fixed sample routes and
 escaped analysis names.
 
+The account layer adds its own tests for scrypt hash format, random salts, round-trip
+verification, malformed hashes, display-name and email normalisation, the password
+rules, case-insensitive duplicate refusal, session lookup and deletion, and expiry
+enforcement. Auth flow tests cover the sign-up and sign-in forms and their CSP, signed-in
+redirects, cookie attributes, the account bar, validation and duplicate-email errors,
+generic bad-credential responses with no cookie, `next` restricted to safe same-site
+paths, anonymous gating of `/plan` and `/upload` with the sample dashboard and report
+still public, logout clearing the session and cookie, cross-origin logout rejection,
+forged and expired sessions, and the per-address attempt limit returning `429` with
+`Retry-After`.
+
 ## Design decisions
 
 | Decision | Reason |
@@ -576,7 +645,11 @@ escaped analysis names.
 | Budget variance is skipped when no budgets are uploaded | A zero-row budget comparison would look like "all budgets met"; the report states that no plan was provided rather than implying a result |
 | Fixed filenames inside a generated analysis id | Client-supplied names never become paths; the strict id pattern makes traversal and ambiguous workspaces impossible |
 | Analysis id carried through every link | A filtered view, CSV download and report stay attached to the same warehouse without server-side session state |
-| Two-layer upload guard: origin check plus synthetic confirmation | The server rejects cross-site form posts and the submitter explicitly confirms the data is fake; neither is a substitute for authentication, which is why binding stays on loopback by default |
+| Two-layer upload guard: origin check plus synthetic confirmation | The server rejects cross-site form posts and the submitter explicitly confirms the data is fake; the demo session adds a gate but is not a substitute for real authentication, which is why binding stays on loopback by default |
+| Local demo accounts instead of an external identity provider | The project must run with no third-party services or secrets; a small SQLite account table demonstrates sessions and password storage while keeping every value made up |
+| Gated planner and upload, public sample dashboard | The showcase dataset should open without friction, but a personal workspace should feel owned; the split keeps the demo readable while showing what a signed-in product looks like |
+| scrypt hashes and hashed session tokens | Passwords must not be recoverable from the file, and a stolen cookie digest should not itself work as a login; both are one standard-library call away |
+| Generic login failure and a rate limiter | Telling an attacker whether the email or the password was wrong leaks which accounts exist; a slow per-address lockout keeps guessing impractical without a dependency |
 | Read-only SQLite URI plus `query_only` | The dashboard cannot accidentally write, even if a handler is wrong; each request gets its own short-lived connection |
 | Fixed sort and filter allow-lists | Untrusted input never becomes SQL text; `LIKE` wildcards are escaped and ordering is chosen from a dict |
 | Shared `theme.py` and `components.py` | The report, dashboard and planner use one visual language and one set of escaping/format helpers, so fixes apply to both |
@@ -613,8 +686,17 @@ external services.
   handling beyond upsert.
 - The anomaly rule is a documented heuristic, not a statistical outlier model.
 - Quarantine records accumulate per run; there is no resolution UI or "cleared" state.
-- The dashboard is single-user and loopback-only. It has no login, saved views or
+- The dashboard is single-user and loopback-only. It has no saved views, roles or
   concurrent-writer coordination; it is a viewer for a batch-built warehouse.
+- Accounts are demo identities, not a user-administration system. There is no email
+  verification, password reset, profile editing, account deletion or roles, and uploaded
+  analyses are not owned by the account that created them — every signed-in visitor sees
+  the same recent uploads. A real multi-user deployment would need those controls.
+- Authentication is local only. Cookies are not `Secure` because the server speaks HTTP
+  on loopback, and the database and session files are not encrypted at rest. That is
+  acceptable only because the data is fake; real financial data would require TLS,
+  secure and rotated secrets, an audit trail, and encryption plus a deletion and
+  retention policy.
 - Uploads run synchronously inside the request, so a large CSV keeps that request open
   until the pipeline finishes. There is no queue, progress stream, cancellation,
   retention policy or delete button; analysis directories accumulate until removed by
@@ -639,9 +721,8 @@ external services.
   receipt is a styled print view, not a downloadable file format.
 - The plan analysis describes the entered numbers (totals, shares, averages and plan
   status). It is not a forecast, credit assessment or financial advice.
-- No authentication or encryption. That is acceptable only because the data is fake and
-  stays in the request and the local response; real financial data would require both,
-  plus a deletion and retention policy for uploaded files.
+- The account is a gate, not a workspace: there is no per-account history of plans and
+  no way to retrieve an earlier analysis after leaving the page.
 
 ## Future improvements
 
@@ -654,8 +735,9 @@ external services.
 - Add saved filter views and a small JSON endpoint over the same validated filters.
 - Let the planner import a student's own rows from the dashboard or a CSV, and add
   monthly periods and recurring entries.
-- Add an explicit receipt export once a retention and authentication story exists; until
-  then the browser print/save flow keeps the planner honest about storing nothing.
+- Add an explicit receipt export once accounts are more than local demo identities and a
+  retention story exists; until then the browser print/save flow keeps the planner
+  honest about storing nothing.
 - Publish tagged releases once the input contract has stayed stable across a few runs.
 
 ## Project log
