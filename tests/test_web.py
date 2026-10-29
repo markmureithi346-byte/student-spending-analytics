@@ -1656,7 +1656,7 @@ class AuthTests(unittest.TestCase):
     def test_signup_creates_hashed_account_and_session_cookie(self) -> None:
         status, headers, _ = self.request("POST", "/signup", fields=self.signup_fields())
         self.assertEqual(status, 303)
-        self.assertEqual(headers["location"], "/plan")
+        self.assertEqual(headers["location"], "/welcome?next=%2Fplan")
         cookie = headers["set-cookie"]
         self.assertIn("ssa_session=", cookie)
         self.assertIn("HttpOnly", cookie)
@@ -1749,7 +1749,7 @@ class AuthTests(unittest.TestCase):
             "POST", "/login", fields=self.login_fields(next="/upload")
         )
         self.assertEqual(status, 303)
-        self.assertEqual(headers["location"], "/upload")
+        self.assertEqual(headers["location"], "/welcome?next=%2Fupload")
         self.assertIn("ssa_session=", headers["set-cookie"])
 
         for unsafe in ("//evil.example", "https://evil.example", "/missing"):
@@ -1758,7 +1758,40 @@ class AuthTests(unittest.TestCase):
                     "POST", "/login", fields=self.login_fields(next=unsafe)
                 )
                 self.assertEqual(status, 303)
-                self.assertEqual(headers["location"], "/plan")
+                self.assertEqual(headers["location"], "/welcome?next=%2Fplan")
+
+    def test_welcome_screen_follows_signin_with_a_safe_refresh(self) -> None:
+        status, headers, _ = self.request(
+            "POST", "/login", fields=self.login_fields(next="/upload")
+        )
+        self.assertEqual(status, 303)
+        cookie = headers["set-cookie"].split(";", 1)[0]
+
+        status, headers, page = self.request(
+            "GET", "/welcome?next=%2Fupload", headers={"Cookie": cookie}
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(headers["cache-control"], "no-store")
+        self.assertIn('http-equiv="refresh"', page)
+        self.assertIn('content="2.6;url=/upload"', page)
+        self.assertIn("Welcome,", page)
+        self.assertIn("Member Student", page)
+        self.assertIn("your upload workspace", page)
+        self.assertIn('role="progressbar"', page)
+        self.assertIn('class="button primary" href="/upload"', page)
+        self.assertIn("@keyframes welcome-fill", page)
+        self.assertNotIn("<script", page.lower())
+
+        status, headers, _ = self.request("GET", "/welcome?next=/upload")
+        self.assertEqual(status, 303)
+        self.assertEqual(headers["location"], "/login?next=%2Fupload")
+
+        status, _, page = self.request(
+            "GET", "/welcome?next=https://evil.example", headers={"Cookie": cookie}
+        )
+        self.assertEqual(status, 200)
+        self.assertIn('content="2.6;url=/plan"', page)
+        self.assertNotIn("evil.example", page)
 
     def test_anonymous_requests_to_personal_tools_are_gated(self) -> None:
         for path in ("/plan", "/upload"):

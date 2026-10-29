@@ -105,25 +105,52 @@ SAMPLE_FILES = {
 MAX_AUTH_REQUEST_BYTES = 16 * 1024
 AUTH_ATTEMPT_LIMIT = 8
 AUTH_ATTEMPT_WINDOW_SECONDS = 5 * 60
+WELCOME_SECONDS = 2.6
 
 _DASH_CSS = """
 .dash-hero .hero-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 0 0 18px; }
 .hero-actions .button.ghost { background: rgba(255,255,255,.1);
   border-color: rgba(255,255,255,.25); color: #f3e8ff; }
 .hero-actions .button.ghost:hover { background: rgba(255,255,255,.18); }
-.button { display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+.button { position: relative; isolation: isolate; overflow: hidden;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
   padding: 9px 16px; border-radius: 999px; border: 1px solid transparent;
   font: inherit; font-size: 13.5px; font-weight: 700; text-decoration: none;
-  cursor: pointer; transition: transform .15s ease, box-shadow .15s ease,
-  background-color .15s ease; }
-.button.primary { background: linear-gradient(100deg, #7c3aed, #c026d3); color: #fff;
+  cursor: pointer; transition: transform .18s cubic-bezier(.2,.9,.3,1.3),
+  box-shadow .18s ease, background-color .18s ease, border-color .18s ease,
+  background-position .35s ease, filter .18s ease; }
+.button::after, button::after { content: ""; position: absolute; inset: 0;
+  background: linear-gradient(115deg, transparent 32%, rgba(255,255,255,.38) 50%,
+  transparent 68%); transform: translateX(-140%) skewX(-14deg);
+  transition: transform .55s ease; pointer-events: none; }
+.button:hover::after, .button:focus-visible::after,
+button:hover::after, button:focus-visible::after {
+  transform: translateX(140%) skewX(-14deg); }
+.button:hover { transform: translateY(-2px); }
+.button:active { transform: translateY(0) scale(.97); }
+.button:focus-visible { outline: 3px solid rgba(240,171,252,.55); outline-offset: 2px; }
+.button.primary { background: linear-gradient(100deg, #7c3aed, #c026d3, #a855f7);
+  background-size: 180% 100%; background-position: 0% 50%; color: #fff;
   box-shadow: 0 10px 20px -12px rgba(109, 40, 217, .8); }
-.button.primary:hover { transform: translateY(-1px); }
+.button.primary:hover { background-position: 100% 50%;
+  box-shadow: 0 16px 28px -14px rgba(192,38,211,.95),
+  0 0 0 1px rgba(240,171,252,.28) inset; }
 .button.ghost { background: rgba(255,255,255,.06); border-color: rgba(196,181,253,.3);
   color: #e9d5ff; }
-.button.ghost:hover { background: rgba(255,255,255,.13); }
+.button.ghost:hover { background: rgba(255,255,255,.13);
+  border-color: rgba(240,171,252,.5);
+  box-shadow: 0 10px 22px -16px rgba(240,171,252,.7); }
 .button.small { padding: 6px 12px; font-size: 12.5px; }
 .button.disabled { opacity: .45; cursor: not-allowed; pointer-events: none; }
+.button.disabled::after { display: none; }
+button { position: relative; cursor: pointer;
+  transition: transform .16s ease, box-shadow .16s ease,
+  background-color .16s ease, border-color .16s ease; }
+button:not(.button) { isolation: isolate; overflow: hidden; }
+button:not(.button):hover { transform: translateY(-1px);
+  box-shadow: 0 8px 18px -12px rgba(240,171,252,.8); }
+button:not(.button):active { transform: translateY(0) scale(.96); }
+button:focus-visible { outline: 3px solid rgba(240,171,252,.55); outline-offset: 2px; }
 .filters { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 14px 16px; margin-top: 14px; }
 .field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
@@ -180,7 +207,11 @@ _DASH_CSS = """
 .upload-form input[type="file"]::file-selector-button {
   margin-right: 10px; padding: 6px 11px; border: 1px solid rgba(196,181,253,.3);
   border-radius: 999px; background: rgba(255,255,255,.08); color: #e9d5ff;
-  font: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; }
+  font: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer;
+  transition: transform .16s ease, background-color .16s ease, box-shadow .16s ease; }
+.upload-form input[type="file"]::file-selector-button:hover {
+  background: rgba(240,171,252,.22); transform: translateY(-1px);
+  box-shadow: 0 6px 14px -10px rgba(240,171,252,.9); }
 .upload-form .columns { margin: 0; color: var(--muted); font-size: 11.5px;
   line-height: 1.45; overflow-wrap: anywhere; }
 .upload-form .check-field, .plan-form .check-field, .auth-form .check-field {
@@ -242,7 +273,9 @@ _DASH_CSS = """
 .plan-add .button { border-style: dashed; }
 .plan-add-button { width: 38px; height: 38px; padding: 0; font-size: 22px;
   line-height: 1; }
-.plan-add-button span { transform: translateY(-1px); }
+.plan-add-button span { display: inline-block; transform: translateY(-1px);
+  transition: transform .25s ease; }
+.plan-add-button:hover span { transform: translateY(-1px) rotate(90deg); }
 .error-list { margin: 5px 0 0; padding-left: 18px; }
 .error-list li { margin: 2px 0; }
 .plan-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
@@ -349,8 +382,9 @@ _DASH_CSS = """
 .account-links a { color: #e9d5ff; font-weight: 700; text-decoration: none; }
 .account-links a:hover, .account-links a:focus-visible { text-decoration: underline; }
 .account-links .account-cta { padding: 5px 13px; border-radius: 999px;
-  background: linear-gradient(100deg, #7c3aed, #c026d3); color: #fff; }
-.account-links .account-cta:hover { text-decoration: none;
+  background: linear-gradient(100deg, #7c3aed, #c026d3); color: #fff;
+  transition: transform .18s ease, box-shadow .18s ease; }
+.account-links .account-cta:hover { text-decoration: none; transform: translateY(-1px);
   box-shadow: 0 8px 18px -10px rgba(192,38,211,.9); }
 .account-signout { padding: 5px 13px; border-radius: 999px;
   border: 1px solid rgba(196,181,253,.35); background: rgba(255,255,255,.06);
@@ -397,6 +431,93 @@ _DASH_CSS = """
   font-size: 11px; font-weight: 800; }
 .auth-steps strong { color: var(--ink); }
 .auth-side .sample-links { margin-top: 18px; }
+.welcome-shell { max-width: 660px; }
+.welcome-card { position: relative; overflow: hidden; padding: 42px 34px 30px;
+  text-align: center; animation: welcome-in .65s cubic-bezier(.2,.9,.3,1.15) both; }
+.welcome-card::before { content: ""; position: absolute; inset: -40% -10% auto;
+  height: 78%; pointer-events: none;
+  background: radial-gradient(ellipse at 50% 0%, rgba(192,38,211,.34), transparent 70%);
+  animation: welcome-halo 3.2s ease-in-out infinite; }
+.welcome-stage { position: relative; width: 128px; height: 128px; margin: 0 auto 16px;
+  display: grid; place-items: center; }
+.welcome-halo { position: absolute; inset: -18px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(192,38,211,.4), transparent 66%);
+  animation: welcome-halo 2.6s ease-in-out infinite; }
+.welcome-ring { position: absolute; inset: 0; border-radius: 50%;
+  border: 1px solid rgba(240,171,252,.4); }
+.welcome-ring.ring-one { border-top-color: #f0abfc;
+  border-right-color: rgba(240,171,252,.8);
+  animation: welcome-spin 2.5s linear infinite; }
+.welcome-ring.ring-two { inset: 13px; border-bottom-color: #c084fc;
+  border-left-color: rgba(192,132,252,.8);
+  animation: welcome-spin 1.9s linear infinite reverse; }
+.welcome-check { position: relative; width: 76px; height: 76px; border-radius: 50%;
+  display: grid; place-items: center;
+  background: linear-gradient(140deg, #8b5cf6, #c026d3);
+  box-shadow: 0 18px 34px -18px rgba(192,38,211,.95),
+  0 0 0 1px rgba(255,255,255,.18) inset;
+  animation: welcome-pop .55s .12s cubic-bezier(.2,.9,.3,1.5) both; }
+.welcome-check svg { width: 40px; height: 40px; }
+.welcome-tick { fill: none; stroke: #fff; stroke-width: 3.2; stroke-linecap: round;
+  stroke-linejoin: round; stroke-dasharray: 34; stroke-dashoffset: 34;
+  animation: welcome-draw .45s .55s ease forwards; }
+.welcome-card .eyebrow { margin-bottom: 8px; }
+.welcome-card h1 { margin: 0 0 8px; font-size: clamp(28px, 4vw, 40px);
+  line-height: 1.06; letter-spacing: -.03em; color: #fff; }
+.welcome-card h1 span { background: linear-gradient(100deg, #e9d5ff, #f0abfc 50%, #c4b5fd);
+  -webkit-background-clip: text; background-clip: text; color: transparent; }
+.welcome-card .lead { max-width: 46ch; margin: 0 auto; }
+.welcome-progress { position: relative; max-width: 360px; height: 7px;
+  margin: 22px auto 12px; border-radius: 999px; overflow: hidden;
+  background: rgba(255,255,255,.08); }
+.welcome-progress span { position: absolute; inset: 0; border-radius: inherit;
+  background: linear-gradient(90deg, #7c3aed, #f0abfc, #c026d3);
+  transform-origin: left center;
+  animation: welcome-fill 2.15s .18s cubic-bezier(.3,.75,.3,1) forwards; }
+.welcome-progress span::after { content: ""; position: absolute; inset: 0;
+  background: linear-gradient(100deg, transparent 30%, rgba(255,255,255,.55) 50%,
+  transparent 70%); transform: translateX(-100%);
+  animation: welcome-shimmer 1.1s .3s ease-in-out infinite; }
+.welcome-status { display: inline-flex; align-items: center; gap: 8px; margin: 0;
+  color: #d8c8ef; font-size: 13px; }
+.loading-dots { display: inline-flex; gap: 4px; }
+.loading-dots i { width: 6px; height: 6px; border-radius: 50%; background: #f0abfc;
+  animation: welcome-dot 1s ease-in-out infinite; }
+.loading-dots i:nth-child(2) { animation-delay: .15s; }
+.loading-dots i:nth-child(3) { animation-delay: .3s; }
+.welcome-facts { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center;
+  margin: 18px 0 0; }
+.welcome-facts span { padding: 4px 11px; border-radius: 999px; font-size: 11px;
+  font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: #e9d5ff;
+  background: rgba(124,58,237,.2); border: 1px solid rgba(196,181,253,.22); }
+.welcome-actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center;
+  margin: 22px 0 0; }
+.welcome-card .section-note { margin: 18px auto 0; max-width: 48ch; }
+@keyframes welcome-in {
+  from { opacity: 0; transform: translateY(16px) scale(.97); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes welcome-pop {
+  from { opacity: 0; transform: scale(.4) rotate(-12deg); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes welcome-draw { to { stroke-dashoffset: 0; } }
+@keyframes welcome-spin { to { transform: rotate(360deg); } }
+@keyframes welcome-halo {
+  0%, 100% { opacity: .55; transform: scale(.94); }
+  50% { opacity: 1; transform: scale(1.06); }
+}
+@keyframes welcome-fill {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+@keyframes welcome-shimmer {
+  60%, 100% { transform: translateX(120%); }
+}
+@keyframes welcome-dot {
+  0%, 100% { opacity: .35; transform: translateY(0); }
+  50% { opacity: 1; transform: translateY(-3px); }
+}
 @media (max-width: 900px) {
   .auth-grid { grid-template-columns: 1fr; }
   .plan-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -439,12 +560,26 @@ _DASH_CSS = """
   .receipt-stamp { top: 12px; right: 2px; }
   .account-bar { border-radius: 16px; justify-content: space-between; }
   .auth-card, .auth-side { padding: 22px 18px; }
+  .welcome-card { padding: 30px 18px 24px; }
+  .welcome-stage { width: 104px; height: 104px; }
+  .welcome-check { width: 62px; height: 62px; }
+  .welcome-check svg { width: 32px; height: 32px; }
+  .welcome-actions .button { width: 100%; }
 }
 @media (max-width: 420px) {
   .dash-cards, .plan-cards { grid-template-columns: 1fr; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .button { transition: none; }
+  .button, button, .account-links .account-cta, .plan-add-button span,
+  .upload-form input[type="file"]::file-selector-button,
+  .welcome-card, .welcome-card::before, .welcome-halo, .welcome-ring,
+  .welcome-check, .welcome-tick, .welcome-progress span,
+  .welcome-progress span::after, .loading-dots i { animation: none; transition: none; }
+  .button::after, button::after { display: none; }
+  .button:hover, .button:active, button:hover, button:active,
+  .account-links .account-cta:hover { transform: none; }
+  .welcome-progress span { transform: scaleX(1); }
+  .welcome-tick { stroke-dashoffset: 0; }
 }
 @media print {
   .account-bar, .auth-side { display: none !important; }
@@ -577,6 +712,7 @@ def _document(
     *,
     skip_href: str | None = "#summary",
     skip_label: str = "Skip to results",
+    extra_head: str = "",
 ) -> str:
     skip = (
         f'<a class="skip" href="{escape_attr(skip_href)}">{escape_attr(skip_label)}</a>\n'
@@ -590,6 +726,7 @@ def _document(
         "<meta name=\"description\" content=\"Interactive analysis workspace for the "
         "synthetic student spending pipeline.\">\n"
         "<link rel=\"icon\" href=\"data:,\">\n"
+        f"{extra_head}"
         f"<style>{BASE_CSS}{_DASH_CSS}</style>\n</head>\n<body>\n"
         f"{skip}"
         f"{scene_markup()}\n"
@@ -637,6 +774,19 @@ def _safe_next(value: str, fallback: str = "/plan") -> str:
 
 def _auth_href(path: str, next_path: str) -> str:
     return f"{path}?{urllib.parse.urlencode({'next': next_path})}"
+
+
+def _welcome_href(next_path: str) -> str:
+    return "/welcome?" + urllib.parse.urlencode({"next": next_path})
+
+
+def _welcome_destination(next_path: str) -> str:
+    path = urllib.parse.urlsplit(next_path).path
+    if path == "/upload":
+        return "your upload workspace"
+    if path == "/":
+        return "the sample dashboard"
+    return "your money planner"
 
 
 def _account_bar(account: Account | None) -> str:
@@ -797,6 +947,57 @@ def render_signup_page(
 </main>
 """
     return _document("Create account · Student Spending Analytics", body, skip_href=None)
+
+
+def render_welcome_page(*, account: Account, next_path: str) -> str:
+    destination = _welcome_destination(next_path)
+    refresh = (
+        f'<meta http-equiv="refresh" content="{WELCOME_SECONDS};'
+        f'url={escape_attr(next_path)}">\n'
+    )
+    body = f"""
+<main class="shell auth-shell welcome-shell">
+  <section class="panel welcome-card" aria-labelledby="welcome-title">
+    <div class="welcome-stage" aria-hidden="true">
+      <span class="welcome-halo"></span>
+      <span class="welcome-ring ring-one"></span>
+      <span class="welcome-ring ring-two"></span>
+      <span class="welcome-check">
+        <svg viewBox="0 0 32 32" role="presentation">
+          <path class="welcome-tick" d="M8 17.5l5.2 5.2L24 11.5"></path>
+        </svg>
+      </span>
+    </div>
+    <p class="eyebrow">Session ready</p>
+    <h1 id="welcome-title">Welcome, <span>{escape_attr(account.display_name)}</span></h1>
+    <p class="lead">You are signed in on this computer. Opening {destination} in a
+      moment.</p>
+    <div class="welcome-progress" role="progressbar" aria-label="Loading {destination}">
+      <span></span>
+    </div>
+    <p class="welcome-status" role="status">Preparing your workspace
+      <span class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+    </p>
+    <p class="welcome-facts" aria-label="Session details">
+      <span>Local only</span>
+      <span>{SESSION_SECONDS // 3600}-hour session</span>
+      <span>No remote calls</span>
+    </p>
+    <div class="welcome-actions">
+      <a class="button primary" href="{escape_attr(next_path)}">Continue now</a>
+      <a class="button ghost" href="/">Explore the sample</a>
+    </div>
+    <p class="section-note">This screen moves on by itself in a moment. It uses CSS
+      animation and a meta refresh, so no JavaScript runs.</p>
+  </section>
+</main>
+"""
+    return _document(
+        "Welcome · Student Spending Analytics",
+        body,
+        skip_href=None,
+        extra_head=refresh,
+    )
 
 
 def load_options(connection: sqlite3.Connection) -> FilterOptions:
@@ -2645,7 +2846,7 @@ class DashboardServer(ThreadingHTTPServer):
 
 class DashboardHandler(BaseHTTPRequestHandler):
     server: DashboardServer
-    server_version = "StudentSpendingDashboard/2.3.0"
+    server_version = "StudentSpendingDashboard/2.4.0"
     sys_version = ""
     timeout = 30
 
@@ -2782,6 +2983,17 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self._send(
             HTTPStatus.OK,
             render_signup_page(next_path=next_path),
+            head_only=head_only,
+        )
+
+    def _welcome_page(self, query: dict[str, list[str]], *, head_only: bool) -> None:
+        next_path = _safe_next(_first(query, "next"))
+        account = self._require_account(next_path)
+        if account is None:
+            return
+        self._send(
+            HTTPStatus.OK,
+            render_welcome_page(account=account, next_path=next_path),
             head_only=head_only,
         )
 
@@ -2949,7 +3161,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
         self.server.login_attempts.clear(key)
         token = self.server.accounts.create_session(account.account_id)
-        self._redirect(next_path, headers=[_session_cookie(token)])
+        self._redirect(_welcome_href(next_path), headers=[_session_cookie(token)])
 
     def _handle_signup(self) -> None:
         if not self._same_origin():
@@ -3029,7 +3241,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
         token = self.server.accounts.create_session(account.account_id)
         logger.info("created demo account %s", account.account_id)
-        self._redirect(next_path, headers=[_session_cookie(token)])
+        self._redirect(_welcome_href(next_path), headers=[_session_cookie(token)])
 
     def _handle_logout(self) -> None:
         if not self._same_origin():
@@ -3297,6 +3509,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self._login_page(query, head_only=head_only)
             elif path == "/signup":
                 self._signup_page(query, head_only=head_only)
+            elif path == "/welcome":
+                self._welcome_page(query, head_only=head_only)
             elif path == "/upload":
                 self._upload_page(query, head_only=head_only)
             elif path == "/plan":

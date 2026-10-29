@@ -106,7 +106,7 @@ virtual environment.
 ```powershell
 python scripts\generate_synthetic_data.py     # writes data/raw/*.csv
 student-spending --full-refresh               # deletes the warehouse, then rebuilds it
-python run_tests.py                           # 157 tests
+python run_tests.py                           # 158 tests
 start reports\spending_report.html
 student-spending serve --open                 # local server; blocks until Ctrl+C
 ```
@@ -157,8 +157,8 @@ the integration tests. The full run log is also written to `logs/pipeline.log`.
 | `--open` | off | open the dashboard in the default browser |
 
 `serve` hosts the sample dashboard at `/`, the CSV upload at `/upload` and the
-one-student money planner at `/plan`, plus the account pages `/signup`, `/login` and
-`/logout`. It refuses to start when the warehouse is missing, unreadable or empty, and
+one-student money planner at `/plan`, plus the account pages `/signup`, `/login`,
+`/logout` and the post-sign-in `/welcome` screen. It refuses to start when the warehouse is missing, unreadable or empty, and
 prints the rebuild command instead of serving a broken page. Stop it with Ctrl+C.
 Demo accounts are stored in `data/accounts.db`, created on first use and separate from
 the warehouse.
@@ -177,6 +177,7 @@ button on every page.
 - `/signup` creates an account from a display name, a made-up email and a password,
   then signs you in and returns you to the page you originally asked for.
 - `/login` starts an eight-hour session and honours a same-site `next` path.
+- `/welcome` is a short loading screen between signing in and the destination page.
 - `/logout` is a POST form that deletes the session and clears the cookie.
 
 Accounts live in `data/accounts.db`, a small local SQLite file that is git-ignored.
@@ -205,6 +206,28 @@ form first.
 ![Sign in at phone width](docs/images/login-mobile.png)
 
 ![Create account at phone width](docs/images/signup-mobile.png)
+
+### The sign-in loading screen
+
+Signing in or creating an account lands on `/welcome` rather than jumping straight to the
+destination. The screen confirms the session with an animated tick, two counter-rotating
+rings, a progress bar and the destination wording ("Opening your money planner"), then
+moves on after 2.6 seconds. The redirect is `<meta http-equiv="refresh">`, so it works
+under the strict no-JavaScript CSP; a **Continue now** button is there for anyone who does
+not want to wait. The page is gated like the tools, so an anonymous visit redirects to
+sign-in, and an unsafe `next` value falls back to `/plan`.
+
+![Sign-in loading screen](docs/images/welcome.png)
+
+At phone width the card tightens, the buttons go full width, and the same countdown runs.
+
+![Sign-in loading screen at phone width](docs/images/welcome-mobile.png)
+
+All motion is CSS-only. Buttons across the platform — primary and ghost links, sign-out,
+add-row **+**, and the file picker — lift on hover, press down on click, and run a light
+sweep across their surface; the primary button also slides its gradient. Every one of
+those transitions is disabled under `prefers-reduced-motion: reduce`, where the progress
+bar renders complete and the tick fully drawn.
 
 ## What a run produces (verified output of this repository)
 
@@ -503,7 +526,7 @@ student-spending-analytics/
 ├── scripts/                  generate_synthetic_data.py, check_env.py
 ├── sql/                      schema.sql, example_queries.sql
 ├── src/student_spending/     pipeline, report, platform, accounts, dashboard and plan modules
-├── tests/                    157 unittest cases
+├── tests/                    158 unittest cases
 ├── warehouse/                generated SQLite database; uploads/ per analysis (git-ignored)
 ├── logs/                     pipeline.log (git-ignored)
 ├── pyproject.toml            package metadata, console script, build config
@@ -586,7 +609,7 @@ python run_tests.py
 python -m unittest discover -s tests -t . -v
 ```
 
-157 tests covering: extraction failures and malformed rows, derived and explicit student
+158 tests covering: extraction failures and malformed rows, derived and explicit student
 dimensions, every validation rule, normalisation, duplicate handling, reconciliation
 accounting, idempotent loading, foreign keys and CHECK constraints, analytics totals and
 shares, anomaly flagging, all quality checks, end-to-end pipeline runs including rerun
@@ -625,7 +648,11 @@ generic bad-credential responses with no cookie, `next` restricted to safe same-
 paths, anonymous gating of `/plan` and `/upload` with the sample dashboard and report
 still public, logout clearing the session and cookie, cross-origin logout rejection,
 forged and expired sessions, and the per-address attempt limit returning `429` with
-`Retry-After`.
+`Retry-After`. The welcome screen has `test_welcome_screen_follows_signin_with_a_safe_refresh`:
+it checks the `303` to `/welcome?next=…`, the eight-hour cookie, the authenticated page
+returning `no-store`, the exact `2.6;url=/upload` refresh, the account name and
+destination wording, the progressbar and continue link, and that anonymous visits
+redirect to sign-in while an unsafe `next` falls back to `/plan`.
 
 ## Design decisions
 
@@ -650,6 +677,8 @@ forged and expired sessions, and the per-address attempt limit returning `429` w
 | Gated planner and upload, public sample dashboard | The showcase dataset should open without friction, but a personal workspace should feel owned; the split keeps the demo readable while showing what a signed-in product looks like |
 | scrypt hashes and hashed session tokens | Passwords must not be recoverable from the file, and a stolen cookie digest should not itself work as a login; both are one standard-library call away |
 | Generic login failure and a rate limiter | Telling an attacker whether the email or the password was wrong leaks which accounts exist; a slow per-address lockout keeps guessing impractical without a dependency |
+| A dedicated `/welcome` screen instead of a spinner on the form | The strict CSP blocks JavaScript, so a submit-time overlay could not run; a real page with a `meta refresh` gives an authenticated, skippable confirmation that still works with scripts off |
+| Button motion via CSS only, with a reduced-motion branch | Feedback on click should never depend on a script or a network round-trip; the same rules collapse to no motion when the OS asks for it |
 | Read-only SQLite URI plus `query_only` | The dashboard cannot accidentally write, even if a handler is wrong; each request gets its own short-lived connection |
 | Fixed sort and filter allow-lists | Untrusted input never becomes SQL text; `LIKE` wildcards are escaped and ordering is chosen from a dict |
 | Shared `theme.py` and `components.py` | The report, dashboard and planner use one visual language and one set of escaping/format helpers, so fixes apply to both |

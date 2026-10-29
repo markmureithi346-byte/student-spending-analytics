@@ -4,6 +4,44 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.0] - 2026-10-30
+
+Adds a loading screen between signing in and the destination, and gives every button a
+consistent hover, press and sheen animation — all CSS, no JavaScript.
+
+### Added
+
+- `/welcome` renders after a successful sign-in or sign-up and offers a small confirmation
+  stage: an animated tick, two counter-rotating rings, a halo, a progress bar and a status
+  line naming the destination. It redirects after 2.6 seconds with
+  `<meta http-equiv="refresh">`, which the strict CSP allows, and a **Continue now**
+  button skips the wait. Desktop and phone screenshots are in the README.
+- The page is gated like the tools: an anonymous visit redirects to `/login` with the safe
+  `next` path, and an unsafe `next` falls back to `/plan`.
+
+### Changed
+
+- Sign-in and sign-up now redirect to `/welcome?next=…` instead of straight to the
+  destination. The session cookie is still set on the original `303`.
+- Every button animates: primary and ghost links lift, press, and sweep a light sheen on
+  hover; the primary button also shifts its three-stop gradient; sign-out, add-row **+**
+  (which rotates a quarter turn) and the file picker join in. Global `button` rules cover
+  controls added later.
+- The whole block collapses under `prefers-reduced-motion: reduce`: no transitions or
+  keyframes, the sheen hidden, the progress bar complete and the tick drawn.
+
+### Fixed
+
+- Nothing user-facing; the hover checks that looked wrong after navigation turned out to be
+  a browser hover-timing artifact, and the rules were confirmed present in the cascade.
+
+### Security
+
+- The welcome screen is behind the same session check as `/plan` and `/upload`, stores
+  nothing, and the refresh target comes from the existing safe-path allow-list.
+
+Release version is now `2.4.0`; the suite is 158 tests.
+
 ## [2.3.0] - 2026-10-29
 
 Adds local demo accounts, so the money planner and the CSV upload sit behind a sign-in

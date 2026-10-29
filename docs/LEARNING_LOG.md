@@ -26,6 +26,7 @@ useful to whoever maintains this project next — including future me.
 | 16. Per-student money plan | done | `personal.py`, `/plan`, user-defined categories, add-row controls, analysis rendered in-page without saved plans |
 | 17. Exact shares, receipt and dark theme | done | largest-remainder shares in the planner, dashboard and report, inline printable receipt placed directly under the analysis, drifting-spark dark-purple backdrop, 138 tests, browser-checked at 1440 px and 390 px |
 | 18. Local demo accounts | done | `accounts.py`, `/signup`, `/login`, `/logout`, scrypt hashes, hashed session tokens, gated `/plan` and `/upload` with the sample dashboard still public, 157 tests, browser-checked at 1440 px, 1280 px and 390 px |
+| 19. Sign-in loading screen and button motion | done | authenticated `/welcome` with an animated tick, rings and progress bar, `meta refresh` hand-off after 2.6 s, CSS-only button hover/press/sheen across the platform, reduced-motion and phone fallbacks, 158 tests, browser-checked at 1440 px and 390 px with the redirect confirmed |
 
 ## Decisions worth remembering
 
@@ -168,6 +169,17 @@ useful to whoever maintains this project next — including future me.
   returns `429` with `Retry-After`, and a successful login clears the counter. It is not a
   distributed defence, but it makes scripted guessing against one mailbox slow enough to
   notice; a production service would use a shared store and account-level throttling.
+- **A loading screen is its own page, not an overlay.** The CSP forbids scripts, so a
+  spinner drawn on the sign-in form could never start the navigation that follows it.
+  Moving the confirmation to `/welcome`, reached by the normal `303`, lets the page use a
+  `meta refresh` to hand off to the destination while staying authenticated, skippable
+  with a real link, and testable with plain HTTP. The cost is one extra round-trip, which
+  the 2.6-second staging screen turns into an intentional pause rather than latency.
+- **Motion belongs to the control, not to a script.** Hover lift, press scale and the
+  sheen sweep are declared on `.button` and on bare `button`, so a control added later
+  inherits them without new markup, and reduced-motion collapses the whole set to
+  nothing. Motion that needs JavaScript would be invisible in exactly the environment
+  this project targets.
 
 ## Bugs hit during development
 
@@ -347,6 +359,28 @@ useful to whoever maintains this project next — including future me.
     and `justify-content: center`, then verify at 1440 px and 390 px. *Lesson:* vertical
     composition needs a viewport rule, not just sensible margins.
 
+26. **The welcome screenshot hung for 30 seconds.** Playwright waited for the page to
+    settle while the 2.6-second `meta refresh` navigated away mid-capture and the
+    background animations never stopped. *Fix:* read the heading, refresh content and
+    script count first, screenshot with `animations: 'disabled'` and a short timeout, and
+    verify the redirect in a separate run that simply waits for `/plan`. *Lesson:* a page
+    that navigates itself needs a capture strategy that expects the departure.
+
+27. **Removing the refresh tag after load did not cancel it.** `page.evaluate` stripped
+    the `<meta>` element, yet the browser still navigated, so a later `goto('/plan')` was
+    interrupted by "another navigation". *Fix:* stop trying to suppress the redirect and
+    instead sequence the reads before the screenshot, then confirm the landing URL with
+    `waitForURL`. *Lesson:* undoing markup does not undo a timer the browser already
+    scheduled.
+
+28. **Hover checks looked broken right after navigation.** `getComputedStyle` reported an
+    identity transform on sign-out and add-row buttons until a mouse move was forced,
+    even though the CSSOM listed `button:not(.button):hover`. Injecting the same selector
+    made the transform appear, proving the rule was fine. *Fix:* verify the rule in the
+    cascade and the primary button's `matrix(1,0,0,1,0,-2)`, and treat the first
+    post-navigation sample as stale. *Lesson:* hover state is input-driven; an automated
+    cursor can be in the right place before the browser has recalculated for it.
+
 ## Concepts this project exercises
 
 Extraction boundaries; per-row error isolation; normalisation vs validation; policy for
@@ -366,8 +400,10 @@ animation with reduced-motion and print fallbacks; password hashing with scrypt 
 random salts; constant-time comparison; hashed session tokens; HttpOnly and SameSite
 cookies; session expiry and logout; same-origin checks on writes; safe redirect
 allow-lists against open redirects; generic authentication errors; timing equalisation
-with a dummy hash; in-memory rate limiting with `Retry-After`; and the difference between
-"valid" and "unusual".
+with a dummy hash; in-memory rate limiting with `Retry-After`; `meta refresh` as a
+no-script redirect; SVG stroke-dash drawing and CSS keyframe staging behind a
+`prefers-reduced-motion` branch; pseudo-element sheen and gradient-position transitions
+on buttons; and the difference between "valid" and "unusual".
 
 ## Next exercises (for the learner, not the pipeline)
 
