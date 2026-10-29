@@ -32,5 +32,8 @@ package-dir = { "" = "src" }
 where = ["src"]
 include = ["student_spending*"]
 
+[tool.setuptools.package-data]
+student_spending = ["assets/*.jpg"]
+
 [tool.setuptools.dynamic]
 version = { attr = "student_spending.__version__" }

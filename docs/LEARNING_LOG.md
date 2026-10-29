@@ -27,6 +27,7 @@ useful to whoever maintains this project next — including future me.
 | 17. Exact shares, receipt and dark theme | done | largest-remainder shares in the planner, dashboard and report, inline printable receipt placed directly under the analysis, drifting-spark dark-purple backdrop, 138 tests, browser-checked at 1440 px and 390 px |
 | 18. Local demo accounts | done | `accounts.py`, `/signup`, `/login`, `/logout`, scrypt hashes, hashed session tokens, gated `/plan` and `/upload` with the sample dashboard still public, 157 tests, browser-checked at 1440 px, 1280 px and 390 px |
 | 19. Sign-in loading screen and button motion | done | authenticated `/welcome` with an animated tick, rings and progress bar, `meta refresh` hand-off after 2.6 s, CSS-only button hover/press/sheen across the platform, reduced-motion and phone fallbacks, 158 tests, browser-checked at 1440 px and 390 px with the redirect confirmed |
+| 20. Plan It brand on the loading screen | done | packaged `plan-it-logo.jpg` served from `/assets/`, `img-src 'self' data:`, wordmark and slogan on `/welcome`, 13-second linear countdown, animated logo tile and rings, 158 tests, browser-checked at 1440 px and 390 px with a measured 13.2-second redirect |
 
 ## Decisions worth remembering
 
@@ -180,6 +181,15 @@ useful to whoever maintains this project next — including future me.
   inherits them without new markup, and reduced-motion collapses the whole set to
   nothing. Motion that needs JavaScript would be invisible in exactly the environment
   this project targets.
+- **The logo is a served asset, not an inline data URI.** A 21 KB JPEG costs about 29 KB
+  of base64 on every welcome response, cannot be cached separately from the HTML, and
+  would end up duplicated in tests. Serving it from `/assets/` keeps the page small and
+  lets the CSP widen by one narrow step (`img-src 'self'`), which is a smaller risk than
+  putting binary data in the document.
+- **A 13-second stage needs a linear bar and a skip.** The requested wait is much longer
+  than a normal hand-off, so an aggressive ease-out would race the bar to 90% and then
+  appear stuck. Linear progress plus **Continue now** keeps the screen honest and
+  escapable.
 
 ## Bugs hit during development
 
@@ -381,6 +391,28 @@ useful to whoever maintains this project next — including future me.
     post-navigation sample as stale. *Lesson:* hover state is input-driven; an automated
     cursor can be in the right place before the browser has recalculated for it.
 
+29. **The logo route answered 500 on the first request.** The cache variable and the
+    loader function were both named `_logo_bytes`, so `def _logo_bytes()` rebound the
+    global to the function; the `is None` guard never fired and the handler passed a
+    function to `len()`. *Fix:* rename the cache to `_LOGO_CACHE`, keeping the function
+    name. *Lesson:* in Python, a module-level function definition is an assignment to the
+    name — it can silently overwrite state declared just above it.
+
+30. **The first Plan It screenshot showed empty rings.** The capture used
+    `animations: 'disabled'`, which fast-forwards finite CSS animations; the logo tile's
+    `welcome-pop` entrance is opacity-zero at its first keyframe and carries
+    `fill-mode: both`, so the frozen frame omitted the image even though it was loaded.
+    *Fix:* wait 4.5 seconds and capture the live page, then verify the tile is 132 × 132
+    with opacity 1. *Lesson:* animation-disabled screenshots can display a state a user
+    never sees; when the content is inside an entrance animation, capture after it, not
+    by freezing it.
+
+31. **The 13-second bar looked finished after 5 seconds.** The fill reused the 2.2-second
+    cubic-bezier from the previous screen, so it reached roughly 75% almost immediately
+    and then sat still. *Fix:* switch the fill to `linear` for the full 12.7 seconds.
+    *Lesson:* easing designed for a short transition is misleading when stretched across
+    a countdown.
+
 ## Concepts this project exercises
 
 Extraction boundaries; per-row error isolation; normalisation vs validation; policy for
@@ -403,7 +435,9 @@ allow-lists against open redirects; generic authentication errors; timing equali
 with a dummy hash; in-memory rate limiting with `Retry-After`; `meta refresh` as a
 no-script redirect; SVG stroke-dash drawing and CSS keyframe staging behind a
 `prefers-reduced-motion` branch; pseudo-element sheen and gradient-position transitions
-on buttons; and the difference between "valid" and "unusual".
+on buttons; same-origin static assets with a narrow `img-src` allowance; package data for
+shipped media; linear progress pacing over a long staged wait; and the difference between
+"valid" and "unusual".
 
 ## Next exercises (for the learner, not the pipeline)
 

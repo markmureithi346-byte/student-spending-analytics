@@ -1772,15 +1772,34 @@ class AuthTests(unittest.TestCase):
         )
         self.assertEqual(status, 200)
         self.assertEqual(headers["cache-control"], "no-store")
+        self.assertIn("img-src 'self' data:", headers["content-security-policy"])
         self.assertIn('http-equiv="refresh"', page)
-        self.assertIn('content="2.6;url=/upload"', page)
+        self.assertIn('content="13;url=/upload"', page)
+        self.assertIn("<title>Plan It · Welcome</title>", page)
+        self.assertIn("Plan It", page)
+        self.assertIn("save money by planning", page)
+        self.assertIn('src="/assets/plan-it-logo.jpg"', page)
         self.assertIn("Welcome,", page)
         self.assertIn("Member Student", page)
         self.assertIn("your upload workspace", page)
+        self.assertIn("13 seconds", page)
         self.assertIn('role="progressbar"', page)
         self.assertIn('class="button primary" href="/upload"', page)
         self.assertIn("@keyframes welcome-fill", page)
+        self.assertIn("animation: welcome-fill 12.7s", page)
         self.assertNotIn("<script", page.lower())
+
+        with urllib.request.urlopen(
+            self.base + "/assets/plan-it-logo.jpg", timeout=30
+        ) as response:
+            logo = response.read()
+            self.assertEqual(response.status, 200)
+            self.assertEqual(response.headers["Content-Type"], "image/jpeg")
+            self.assertEqual(
+                response.headers["Cache-Control"], "public, max-age=86400"
+            )
+        self.assertTrue(logo.startswith(b"\xff\xd8\xff"))
+        self.assertEqual(len(logo), web.LOGO_PATH.stat().st_size)
 
         status, headers, _ = self.request("GET", "/welcome?next=/upload")
         self.assertEqual(status, 303)
@@ -1790,7 +1809,7 @@ class AuthTests(unittest.TestCase):
             "GET", "/welcome?next=https://evil.example", headers={"Cookie": cookie}
         )
         self.assertEqual(status, 200)
-        self.assertIn('content="2.6;url=/plan"', page)
+        self.assertIn('content="13;url=/plan"', page)
         self.assertNotIn("evil.example", page)
 
     def test_anonymous_requests_to_personal_tools_are_gated(self) -> None:

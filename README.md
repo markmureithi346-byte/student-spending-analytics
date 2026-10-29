@@ -177,7 +177,8 @@ button on every page.
 - `/signup` creates an account from a display name, a made-up email and a password,
   then signs you in and returns you to the page you originally asked for.
 - `/login` starts an eight-hour session and honours a same-site `next` path.
-- `/welcome` is a short loading screen between signing in and the destination page.
+- `/welcome` is a 13-second branded loading screen between signing in and the destination
+  page.
 - `/logout` is a POST form that deletes the session and clears the cookie.
 
 Accounts live in `data/accounts.db`, a small local SQLite file that is git-ignored.
@@ -210,24 +211,32 @@ form first.
 ### The sign-in loading screen
 
 Signing in or creating an account lands on `/welcome` rather than jumping straight to the
-destination. The screen confirms the session with an animated tick, two counter-rotating
-rings, a progress bar and the destination wording ("Opening your money planner"), then
-moves on after 2.6 seconds. The redirect is `<meta http-equiv="refresh">`, so it works
-under the strict no-JavaScript CSP; a **Continue now** button is there for anyone who does
-not want to wait. The page is gated like the tools, so an anonymous visit redirects to
-sign-in, and an unsafe `next` value falls back to `/plan`.
+destination. The screen stages the **Plan It** brand — the logo in an animated tile, the
+wordmark and the slogan *Let's save money by planning* — above the signed-in name and the
+destination wording. Rings orbit the logo, the tile floats, and a linear progress bar fills
+for 13 seconds before the page moves on. The redirect is
+`<meta http-equiv="refresh">`, so it works under the strict no-JavaScript CSP; a
+**Continue now** button is there for anyone who does not want to wait. The page is gated
+like the tools, so an anonymous visit redirects to sign-in, and an unsafe `next` value
+falls back to `/plan`.
 
-![Sign-in loading screen](docs/images/welcome.png)
+![Plan It loading screen](docs/images/welcome.png)
 
-At phone width the card tightens, the buttons go full width, and the same countdown runs.
+At phone width the card tightens, the buttons go full width, and the same 13-second
+countdown runs.
 
-![Sign-in loading screen at phone width](docs/images/welcome-mobile.png)
+![Plan It loading screen at phone width](docs/images/welcome-mobile.png)
+
+The logo is a 21 KB JPEG served from `/assets/plan-it-logo.jpg`, a public same-origin asset
+so the browser can cache it and the HTML stays small. It is the only image the CSP allows
+alongside `data:`. The rest of the dashboard keeps its existing page titles and labels;
+the Plan It identity is currently applied to this screen.
 
 All motion is CSS-only. Buttons across the platform — primary and ghost links, sign-out,
 add-row **+**, and the file picker — lift on hover, press down on click, and run a light
 sweep across their surface; the primary button also slides its gradient. Every one of
-those transitions is disabled under `prefers-reduced-motion: reduce`, where the progress
-bar renders complete and the tick fully drawn.
+those transitions is disabled under `prefers-reduced-motion: reduce`, where the logo, rings
+and progress bar render in their final state.
 
 ## What a run produces (verified output of this repository)
 
@@ -526,6 +535,7 @@ student-spending-analytics/
 ├── scripts/                  generate_synthetic_data.py, check_env.py
 ├── sql/                      schema.sql, example_queries.sql
 ├── src/student_spending/     pipeline, report, platform, accounts, dashboard and plan modules
+│   └── assets/               plan-it-logo.jpg served at /assets/plan-it-logo.jpg
 ├── tests/                    158 unittest cases
 ├── warehouse/                generated SQLite database; uploads/ per analysis (git-ignored)
 ├── logs/                     pipeline.log (git-ignored)
@@ -650,9 +660,10 @@ still public, logout clearing the session and cookie, cross-origin logout reject
 forged and expired sessions, and the per-address attempt limit returning `429` with
 `Retry-After`. The welcome screen has `test_welcome_screen_follows_signin_with_a_safe_refresh`:
 it checks the `303` to `/welcome?next=…`, the eight-hour cookie, the authenticated page
-returning `no-store`, the exact `2.6;url=/upload` refresh, the account name and
-destination wording, the progressbar and continue link, and that anonymous visits
-redirect to sign-in while an unsafe `next` falls back to `/plan`.
+returning `no-store`, the exact `13;url=/upload` refresh, the Plan It wordmark and slogan,
+the 13-second copy, the progressbar and continue link, a 200 `image/jpeg` for the logo
+route with the bytes matching the packaged file, and that anonymous visits redirect to
+sign-in while an unsafe `next` falls back to `/plan`.
 
 ## Design decisions
 
@@ -678,6 +689,8 @@ redirect to sign-in while an unsafe `next` falls back to `/plan`.
 | scrypt hashes and hashed session tokens | Passwords must not be recoverable from the file, and a stolen cookie digest should not itself work as a login; both are one standard-library call away |
 | Generic login failure and a rate limiter | Telling an attacker whether the email or the password was wrong leaks which accounts exist; a slow per-address lockout keeps guessing impractical without a dependency |
 | A dedicated `/welcome` screen instead of a spinner on the form | The strict CSP blocks JavaScript, so a submit-time overlay could not run; a real page with a `meta refresh` gives an authenticated, skippable confirmation that still works with scripts off |
+| The Plan It logo is a cached same-origin asset, not a data URI | A brand image is reused and cacheable; serving it from `/assets/` keeps the HTML small and lets `img-src` stay narrow at `'self' data:` |
+| A 13-second wait with a linear bar and a skip link | The duration is a deliberate product choice for the demo; a linear fill matches the actual wait, and **Continue now** keeps it from being a trap |
 | Button motion via CSS only, with a reduced-motion branch | Feedback on click should never depend on a script or a network round-trip; the same rules collapse to no motion when the OS asks for it |
 | Read-only SQLite URI plus `query_only` | The dashboard cannot accidentally write, even if a handler is wrong; each request gets its own short-lived connection |
 | Fixed sort and filter allow-lists | Untrusted input never becomes SQL text; `LIKE` wildcards are escaped and ordering is chosen from a dict |

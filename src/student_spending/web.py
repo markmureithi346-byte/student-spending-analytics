@@ -105,7 +105,17 @@ SAMPLE_FILES = {
 MAX_AUTH_REQUEST_BYTES = 16 * 1024
 AUTH_ATTEMPT_LIMIT = 8
 AUTH_ATTEMPT_WINDOW_SECONDS = 5 * 60
-WELCOME_SECONDS = 2.6
+WELCOME_SECONDS = 13
+LOGO_PATH = Path(__file__).resolve().parent / "assets" / "plan-it-logo.jpg"
+_LOGO_CACHE: bytes | None = None
+
+
+def _logo_bytes() -> bytes:
+    global _LOGO_CACHE
+    if _LOGO_CACHE is None:
+        _LOGO_CACHE = LOGO_PATH.read_bytes()
+    return _LOGO_CACHE
+
 
 _DASH_CSS = """
 .dash-hero .hero-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 0 0 18px; }
@@ -431,39 +441,42 @@ button:focus-visible { outline: 3px solid rgba(240,171,252,.55); outline-offset:
   font-size: 11px; font-weight: 800; }
 .auth-steps strong { color: var(--ink); }
 .auth-side .sample-links { margin-top: 18px; }
-.welcome-shell { max-width: 660px; }
-.welcome-card { position: relative; overflow: hidden; padding: 42px 34px 30px;
+.welcome-shell { max-width: 680px; }
+.welcome-card { position: relative; overflow: hidden; padding: 44px 34px 30px;
   text-align: center; animation: welcome-in .65s cubic-bezier(.2,.9,.3,1.15) both; }
 .welcome-card::before { content: ""; position: absolute; inset: -40% -10% auto;
   height: 78%; pointer-events: none;
   background: radial-gradient(ellipse at 50% 0%, rgba(192,38,211,.34), transparent 70%);
   animation: welcome-halo 3.2s ease-in-out infinite; }
-.welcome-stage { position: relative; width: 128px; height: 128px; margin: 0 auto 16px;
+.welcome-stage { position: relative; width: 158px; height: 158px; margin: 0 auto 20px;
   display: grid; place-items: center; }
-.welcome-halo { position: absolute; inset: -18px; border-radius: 50%;
-  background: radial-gradient(circle, rgba(192,38,211,.4), transparent 66%);
-  animation: welcome-halo 2.6s ease-in-out infinite; }
+.welcome-halo { position: absolute; inset: -20px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(192,38,211,.42), transparent 66%);
+  animation: welcome-halo 3.8s ease-in-out infinite; }
 .welcome-ring { position: absolute; inset: 0; border-radius: 50%;
   border: 1px solid rgba(240,171,252,.4); }
 .welcome-ring.ring-one { border-top-color: #f0abfc;
   border-right-color: rgba(240,171,252,.8);
-  animation: welcome-spin 2.5s linear infinite; }
-.welcome-ring.ring-two { inset: 13px; border-bottom-color: #c084fc;
+  animation: welcome-spin 6s linear infinite; }
+.welcome-ring.ring-two { inset: 11px; border-bottom-color: #c084fc;
   border-left-color: rgba(192,132,252,.8);
-  animation: welcome-spin 1.9s linear infinite reverse; }
-.welcome-check { position: relative; width: 76px; height: 76px; border-radius: 50%;
-  display: grid; place-items: center;
-  background: linear-gradient(140deg, #8b5cf6, #c026d3);
-  box-shadow: 0 18px 34px -18px rgba(192,38,211,.95),
+  animation: welcome-spin 4.4s linear infinite reverse; }
+.welcome-logo-shell { position: relative; z-index: 1; width: 132px; height: 132px;
+  border-radius: 30px; overflow: hidden;
+  box-shadow: 0 22px 42px -20px rgba(124,58,237,.95),
   0 0 0 1px rgba(255,255,255,.18) inset;
-  animation: welcome-pop .55s .12s cubic-bezier(.2,.9,.3,1.5) both; }
-.welcome-check svg { width: 40px; height: 40px; }
-.welcome-tick { fill: none; stroke: #fff; stroke-width: 3.2; stroke-linecap: round;
-  stroke-linejoin: round; stroke-dasharray: 34; stroke-dashoffset: 34;
-  animation: welcome-draw .45s .55s ease forwards; }
-.welcome-card .eyebrow { margin-bottom: 8px; }
-.welcome-card h1 { margin: 0 0 8px; font-size: clamp(28px, 4vw, 40px);
-  line-height: 1.06; letter-spacing: -.03em; color: #fff; }
+  animation: welcome-pop .7s .1s cubic-bezier(.2,.9,.3,1.4) both; }
+.welcome-logo { display: block; width: 100%; height: 100%; object-fit: cover;
+  animation: welcome-float 4.2s ease-in-out infinite; }
+.welcome-card .eyebrow { margin: 4px 0 8px; justify-content: center; }
+.welcome-brand { margin: 0; font-size: clamp(38px, 6vw, 56px); font-weight: 800;
+  line-height: 1; letter-spacing: -.045em;
+  background: linear-gradient(100deg, #e9d5ff, #f0abfc 45%, #c4b5fd);
+  -webkit-background-clip: text; background-clip: text; color: transparent; }
+.welcome-slogan { margin: 10px 0 0; color: #f0abfc; font-size: 15px; font-weight: 700;
+  letter-spacing: .015em; }
+.welcome-card h1 { margin: 16px 0 8px; font-size: clamp(20px, 2.8vw, 26px);
+  line-height: 1.15; letter-spacing: -.01em; color: #fff; }
 .welcome-card h1 span { background: linear-gradient(100deg, #e9d5ff, #f0abfc 50%, #c4b5fd);
   -webkit-background-clip: text; background-clip: text; color: transparent; }
 .welcome-card .lead { max-width: 46ch; margin: 0 auto; }
@@ -473,7 +486,7 @@ button:focus-visible { outline: 3px solid rgba(240,171,252,.55); outline-offset:
 .welcome-progress span { position: absolute; inset: 0; border-radius: inherit;
   background: linear-gradient(90deg, #7c3aed, #f0abfc, #c026d3);
   transform-origin: left center;
-  animation: welcome-fill 2.15s .18s cubic-bezier(.3,.75,.3,1) forwards; }
+  animation: welcome-fill 12.7s .2s linear forwards; }
 .welcome-progress span::after { content: ""; position: absolute; inset: 0;
   background: linear-gradient(100deg, transparent 30%, rgba(255,255,255,.55) 50%,
   transparent 70%); transform: translateX(-100%);
@@ -501,8 +514,11 @@ button:focus-visible { outline: 3px solid rgba(240,171,252,.55); outline-offset:
   from { opacity: 0; transform: scale(.4) rotate(-12deg); }
   to { opacity: 1; transform: none; }
 }
-@keyframes welcome-draw { to { stroke-dashoffset: 0; } }
 @keyframes welcome-spin { to { transform: rotate(360deg); } }
+@keyframes welcome-float {
+  0%, 100% { transform: translateY(-3px) scale(1); }
+  50% { transform: translateY(4px) scale(1.02); }
+}
 @keyframes welcome-halo {
   0%, 100% { opacity: .55; transform: scale(.94); }
   50% { opacity: 1; transform: scale(1.06); }
@@ -561,9 +577,9 @@ button:focus-visible { outline: 3px solid rgba(240,171,252,.55); outline-offset:
   .account-bar { border-radius: 16px; justify-content: space-between; }
   .auth-card, .auth-side { padding: 22px 18px; }
   .welcome-card { padding: 30px 18px 24px; }
-  .welcome-stage { width: 104px; height: 104px; }
-  .welcome-check { width: 62px; height: 62px; }
-  .welcome-check svg { width: 32px; height: 32px; }
+  .welcome-stage { width: 128px; height: 128px; }
+  .welcome-logo-shell { width: 104px; height: 104px; border-radius: 24px; }
+  .welcome-brand { font-size: 40px; }
   .welcome-actions .button { width: 100%; }
 }
 @media (max-width: 420px) {
@@ -573,13 +589,12 @@ button:focus-visible { outline: 3px solid rgba(240,171,252,.55); outline-offset:
   .button, button, .account-links .account-cta, .plan-add-button span,
   .upload-form input[type="file"]::file-selector-button,
   .welcome-card, .welcome-card::before, .welcome-halo, .welcome-ring,
-  .welcome-check, .welcome-tick, .welcome-progress span,
+  .welcome-logo-shell, .welcome-logo, .welcome-progress span,
   .welcome-progress span::after, .loading-dots i { animation: none; transition: none; }
   .button::after, button::after { display: none; }
   .button:hover, .button:active, button:hover, button:active,
   .account-links .account-cta:hover { transform: none; }
   .welcome-progress span { transform: scaleX(1); }
-  .welcome-tick { stroke-dashoffset: 0; }
 }
 @media print {
   .account-bar, .auth-side { display: none !important; }
@@ -951,8 +966,9 @@ def render_signup_page(
 
 def render_welcome_page(*, account: Account, next_path: str) -> str:
     destination = _welcome_destination(next_path)
+    wait = int(WELCOME_SECONDS)
     refresh = (
-        f'<meta http-equiv="refresh" content="{WELCOME_SECONDS};'
+        f'<meta http-equiv="refresh" content="{wait};'
         f'url={escape_attr(next_path)}">\n'
     )
     body = f"""
@@ -962,16 +978,17 @@ def render_welcome_page(*, account: Account, next_path: str) -> str:
       <span class="welcome-halo"></span>
       <span class="welcome-ring ring-one"></span>
       <span class="welcome-ring ring-two"></span>
-      <span class="welcome-check">
-        <svg viewBox="0 0 32 32" role="presentation">
-          <path class="welcome-tick" d="M8 17.5l5.2 5.2L24 11.5"></path>
-        </svg>
+      <span class="welcome-logo-shell">
+        <img class="welcome-logo" src="/assets/plan-it-logo.jpg" alt=""
+          width="132" height="132" decoding="async">
       </span>
     </div>
     <p class="eyebrow">Session ready</p>
+    <p class="welcome-brand">Plan It</p>
+    <p class="welcome-slogan">Let&rsquo;s save money by planning</p>
     <h1 id="welcome-title">Welcome, <span>{escape_attr(account.display_name)}</span></h1>
-    <p class="lead">You are signed in on this computer. Opening {destination} in a
-      moment.</p>
+    <p class="lead">You are signed in on this computer. Opening {destination}
+      automatically in {wait} seconds.</p>
     <div class="welcome-progress" role="progressbar" aria-label="Loading {destination}">
       <span></span>
     </div>
@@ -987,13 +1004,14 @@ def render_welcome_page(*, account: Account, next_path: str) -> str:
       <a class="button primary" href="{escape_attr(next_path)}">Continue now</a>
       <a class="button ghost" href="/">Explore the sample</a>
     </div>
-    <p class="section-note">This screen moves on by itself in a moment. It uses CSS
-      animation and a meta refresh, so no JavaScript runs.</p>
+    <p class="section-note">This screen stages the Plan It logo for {wait} seconds and
+      then opens {destination} on its own. Continue now skips the wait, and no
+      JavaScript runs.</p>
   </section>
 </main>
 """
     return _document(
-        "Welcome · Student Spending Analytics",
+        "Plan It · Welcome",
         body,
         skip_href=None,
         extra_head=refresh,
@@ -2846,7 +2864,7 @@ class DashboardServer(ThreadingHTTPServer):
 
 class DashboardHandler(BaseHTTPRequestHandler):
     server: DashboardServer
-    server_version = "StudentSpendingDashboard/2.4.0"
+    server_version = "StudentSpendingDashboard/2.5.0"
     sys_version = ""
     timeout = 30
 
@@ -2918,17 +2936,30 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     def _send(self, status: int, body: str, *, headers: list[tuple[str, str]] | None = None,
               content_type: str = "text/html; charset=utf-8",
-              head_only: bool = False) -> None:
-        payload = body.encode("utf-8")
+              head_only: bool = False, cache_control: str = "no-store") -> None:
+        self._send_payload(
+            status,
+            body.encode("utf-8"),
+            headers=headers,
+            content_type=content_type,
+            head_only=head_only,
+            cache_control=cache_control,
+        )
+
+    def _send_payload(self, status: int, payload: bytes, *,
+                      headers: list[tuple[str, str]] | None = None,
+                      content_type: str = "text/html; charset=utf-8",
+                      head_only: bool = False,
+                      cache_control: str = "no-store") -> None:
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(payload)))
-        self.send_header("Cache-Control", "no-store")
+        self.send_header("Cache-Control", cache_control)
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "same-origin")
         self.send_header(
             "Content-Security-Policy",
-            "default-src 'none'; style-src 'unsafe-inline'; img-src data:; "
+            "default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; "
             "form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
         )
         for name, value in headers or ():
@@ -2936,6 +2967,25 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.end_headers()
         if not head_only:
             self.wfile.write(payload)
+
+    def _logo_asset(self, *, head_only: bool) -> None:
+        try:
+            payload = _logo_bytes()
+        except OSError:
+            logger.exception("Plan It logo is missing from the package")
+            body = _error_document(
+                "Logo unavailable",
+                "The Plan It logo could not be read from the installed package.",
+            )
+            self._send(HTTPStatus.NOT_FOUND, body, head_only=head_only)
+            return
+        self._send_payload(
+            HTTPStatus.OK,
+            payload,
+            content_type="image/jpeg",
+            head_only=head_only,
+            cache_control="public, max-age=86400",
+        )
 
     def _upload_page(self, query: dict[str, list[str]], *, head_only: bool) -> None:
         account = self._require_account(_safe_next(self.path, "/upload"))
@@ -3521,6 +3571,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self._report(query, head_only=head_only)
             elif path.startswith("/samples/"):
                 self._sample(path, head_only=head_only)
+            elif path == "/assets/plan-it-logo.jpg":
+                self._logo_asset(head_only=head_only)
             elif path == "/favicon.ico":
                 self._no_content()
             else:

@@ -4,6 +4,33 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.0] - 2026-10-30
+
+Rebrands the loading screen as **Plan It**, drops in the supplied logo, and stretches the
+staged wait to 13 seconds.
+
+### Added
+
+- `src/student_spending/assets/plan-it-logo.jpg` (21 KB), served publicly at
+  `/assets/plan-it-logo.jpg` with `Cache-Control: public, max-age=86400` and packaged with
+  the distribution through `tool.setuptools.package-data`.
+- The welcome screen now carries the Plan It wordmark, the slogan *Let's save money by
+  planning*, and the logo in a rounded tile with counter-rotating rings and a floating
+  animation. The signed-in name and destination line sit underneath.
+- The welcome test now also covers the logo route: `200`, `image/jpeg`, the cache header,
+  and bytes matching the packaged file.
+
+### Changed
+
+- The countdown is now 13 seconds: the meta refresh reads `13;url=…` and the progress bar
+  runs `12.7s` on a linear curve, so it matches the actual wait instead of finishing early.
+- The signed-in heading is smaller than the brand wordmark, and the eyebrow is centred, so
+  the logo, brand, slogan and welcome name read as one stack.
+- CSP now permits `img-src 'self' data:` so the same-origin logo can load; everything else
+  remains locked down, and no script is introduced.
+
+Release version is now `2.5.0`; the suite is still 158 tests.
+
 ## [2.4.0] - 2026-10-30
 
 Adds a loading screen between signing in and the destination, and gives every button a
