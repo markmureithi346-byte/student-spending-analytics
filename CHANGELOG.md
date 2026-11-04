@@ -4,6 +4,28 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.0] - 2026-11-04
+
+Moves the add-row **+** controls under the Categories and Spending lists and makes adding
+a row feel continuous, still with no JavaScript.
+
+### Changed
+
+- The **+** control and its row counter now sit in a dashed-top bar under each list
+  instead of beside the section heading, so new rows appear where you are reading.
+- Adding a row keeps the whole draft: the **+** button posts the form with
+  `formnovalidate` to `/plan#categories-end` (or `#spending-end`), and the server
+  re-renders the form with one more row without validating or saving anything.
+- The newly added row gets a short `row-in` slide animation and an `autofocus` on its
+  first field, and `scroll-margin-top` on the end anchors lands the page with the new row
+  and the **+** bar both in view. Reduced-motion users get the same row with no animation.
+- The form lead copies now point to the **+** under the list, and the initial form render
+  carries neither the new-row animation nor an autofocus.
+
+Release version is now `2.6.0`; the suite is still 158 tests, with the add-row tests now
+covering the bottom placement, end anchors, preserved draft, new-row animation and
+autofocus.
+
 ## [2.5.0] - 2026-10-30
 
 Rebrands the loading screen as **Plan It**, drops in the supplied logo, and stretches the

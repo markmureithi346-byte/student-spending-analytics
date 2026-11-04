@@ -273,14 +273,20 @@ button:focus-visible { outline: 3px solid rgba(240,171,252,.55); outline-offset:
 .plan-row-head { padding: 0 2px 4px; color: #b9a3d8; font-size: 10.5px;
   text-transform: uppercase; letter-spacing: .06em; font-weight: 800; }
 .plan-row { margin-bottom: 7px; }
+.plan-row-new { animation: row-in .5s cubic-bezier(.2,.9,.3,1.15) both; }
+@keyframes row-in {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: none; }
+}
 .plan-row input, .plan-row select { padding: 8px 9px; font-size: 13px; }
 .row-no { color: #a28cc4; font-size: 11px; font-weight: 700;
   font-variant-numeric: tabular-nums; text-align: right; }
 .plan-section-note { margin: 8px 0 0; color: var(--muted); font-size: 12px; }
-.plan-title-row { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center;
-  justify-content: space-between; }
-.plan-add { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+.plan-add { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center;
+  margin: 12px 0 0; padding: 12px 2px 0;
+  border-top: 1px dashed rgba(196,181,253,.28); }
 .plan-add .button { border-style: dashed; }
+#categories-end, #spending-end { scroll-margin-top: 200px; }
 .plan-add-button { width: 38px; height: 38px; padding: 0; font-size: 22px;
   line-height: 1; }
 .plan-add-button span { display: inline-block; transform: translateY(-1px);
@@ -588,6 +594,7 @@ button:focus-visible { outline: 3px solid rgba(240,171,252,.55); outline-offset:
 @media (prefers-reduced-motion: reduce) {
   .button, button, .account-links .account-cta, .plan-add-button span,
   .upload-form input[type="file"]::file-selector-button,
+  .plan-row-new,
   .welcome-card, .welcome-card::before, .welcome-halo, .welcome-ring,
   .welcome-logo-shell, .welcome-logo, .welcome-progress span,
   .welcome-progress span::after, .loading-dots i { animation: none; transition: none; }
@@ -2075,14 +2082,16 @@ def _plan_error_banner(errors: list[str]) -> str:
     )
 
 
-def _category_row(number: int, row: object) -> str:
+def _category_row(number: int, row: object, *, is_new: bool = False) -> str:
     essential = bool(getattr(row, "essential", False))
+    autofocus = " autofocus" if is_new else ""
     return f"""
-      <div class="plan-row cat-cols">
+      <div class="plan-row cat-cols{" plan-row-new" if is_new else ""}"
+        id="plan-cat-{number}">
         <span class="row-no" aria-hidden="true">{number:02d}</span>
         <input name="category_name_{number}" type="text" maxlength="{MAX_CATEGORY_NAME_LENGTH}"
           value="{escape_attr(getattr(row, 'name', ''))}" placeholder="e.g. Food"
-          aria-label="Category {number} name" autocomplete="off">
+          aria-label="Category {number} name" autocomplete="off"{autofocus}>
         <input name="category_amount_{number}" type="text" inputmode="decimal"
           value="{escape_attr(getattr(row, 'planned', ''))}" placeholder="0.00"
           aria-label="Category {number} planned amount in KES">
@@ -2093,13 +2102,15 @@ def _category_row(number: int, row: object) -> str:
       </div>"""
 
 
-def _spending_row(number: int, row: object) -> str:
+def _spending_row(number: int, row: object, *, is_new: bool = False) -> str:
+    autofocus = " autofocus" if is_new else ""
     return f"""
-      <div class="plan-row spend-cols">
+      <div class="plan-row spend-cols{" plan-row-new" if is_new else ""}"
+        id="plan-spend-{number}">
         <span class="row-no" aria-hidden="true">{number:02d}</span>
         <input name="spending_date_{number}" type="date"
           value="{escape_attr(getattr(row, 'spent_on', ''))}"
-          aria-label="Spending row {number} date">
+          aria-label="Spending row {number} date"{autofocus}>
         <input name="spending_category_{number}" type="text"
           maxlength="{MAX_CATEGORY_NAME_LENGTH}"
           value="{escape_attr(getattr(row, 'category', ''))}" placeholder="Your category"
@@ -2131,8 +2142,8 @@ def _add_row_control(
         '<div class="plan-add">'
         f'<span class="section-note">{rows} of {maximum} {noun} rows</span>'
         '<button class="button ghost plan-add-button" type="submit" '
-        f'name="action" value="{action}" formaction="/plan#{section}" formnovalidate '
-        f'aria-label="{label}" title="{label}">'
+        f'name="action" value="{action}" formaction="/plan#{section}-end" '
+        f'formnovalidate aria-label="{label}" title="{label}">'
         '<span aria-hidden="true">+</span></button>'
         "</div>"
     )
@@ -2146,6 +2157,8 @@ def render_plan_page(
     analysis: PlanAnalysis | None = None,
     category_rows: int = CATEGORY_ROWS,
     spending_rows: int = SPENDING_ROWS,
+    new_category_row: int | None = None,
+    new_spending_row: int | None = None,
     account: Account | None = None,
 ) -> str:
     draft = draft or PlanDraft()
@@ -2157,11 +2170,11 @@ def render_plan_page(
         max(SPENDING_ROWS, len(draft.spendings), spending_rows), MAX_SPENDINGS
     )
     categories_html = "".join(
-        _category_row(number, draft.category(number))
+        _category_row(number, draft.category(number), is_new=number == new_category_row)
         for number in range(1, category_rows + 1)
     )
     spendings_html = "".join(
-        _spending_row(number, draft.spending(number))
+        _spending_row(number, draft.spending(number), is_new=number == new_spending_row)
         for number in range(1, spending_rows + 1)
     )
     analysis_html = (
@@ -2258,20 +2271,19 @@ def render_plan_page(
 
     <section class="panel" id="categories" aria-labelledby="categories-title">
       <p class="eyebrow"><span class="section-no">02</span> Categories</p>
-      <div class="plan-title-row">
-        <h2 id="categories-title">Name your own categories</h2>
-        {add_category}
-      </div>
+      <h2 id="categories-title">Name your own categories</h2>
       <p class="lead">There is no fixed category list: use the names you think in.
         Add a planned amount if you have one, and mark each category Essential or
-        Flexible. Use + to add more rows. Blank rows are ignored; at least two
-        categories are needed.</p>
+        Flexible. Use the + under the list to add a row. Blank rows are ignored;
+        at least two categories are needed.</p>
       <div class="plan-rows">
         <div class="plan-row-head cat-cols">
           <span>#</span><span>Category name</span><span>Planned KES</span><span>Type</span>
         </div>
         {categories_html}
       </div>
+      <div id="categories-end"></div>
+      {add_category}
       <p class="plan-section-note">Leaving Planned KES blank means zero for that
         category. Spending in a category with a zero plan is still included, and the
         analysis marks it as having no plan.</p>
@@ -2279,13 +2291,10 @@ def render_plan_page(
 
     <section class="panel" id="spending" aria-labelledby="spending-title">
       <p class="eyebrow"><span class="section-no">03</span> Spending</p>
-      <div class="plan-title-row">
-        <h2 id="spending-title">What you actually spent</h2>
-        {add_spending}
-      </div>
+      <h2 id="spending-title">What you actually spent</h2>
       <p class="lead">One row per purchase or payment. Use a category name from above;
-        matching ignores capitalisation. Use + to add more rows. Leave any row blank
-        if you do not need it.</p>
+        matching ignores capitalisation. Use the + under the list to add a row. Leave
+        any row blank if you do not need it.</p>
       <div class="plan-rows">
         <div class="plan-row-head spend-cols">
           <span>#</span><span>Date</span><span>Category</span>
@@ -2293,6 +2302,8 @@ def render_plan_page(
         </div>
         {spendings_html}
       </div>
+      <div id="spending-end"></div>
+      {add_spending}
       <p class="plan-section-note">At least one complete spending row is needed.
         Dates use YYYY-MM-DD in the browser's date picker.</p>
     </section>
@@ -2864,7 +2875,7 @@ class DashboardServer(ThreadingHTTPServer):
 
 class DashboardHandler(BaseHTTPRequestHandler):
     server: DashboardServer
-    server_version = "StudentSpendingDashboard/2.5.0"
+    server_version = "StudentSpendingDashboard/2.6.0"
     sys_version = ""
     timeout = 30
 
@@ -3362,6 +3373,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     draft=draft,
                     category_rows=category_rows,
                     spending_rows=spending_rows,
+                    new_category_row=category_rows if action == "add_category" else None,
+                    new_spending_row=spending_rows if action == "add_spending" else None,
                     account=account,
                 ),
             )

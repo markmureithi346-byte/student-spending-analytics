@@ -1168,6 +1168,21 @@ class MoneyPlanTests(unittest.TestCase):
         self.assertIn('aria-label="Add another spending row"', page)
         self.assertIn("1 of 100 category rows", page)
         self.assertIn("1 of 100 spending rows", page)
+        self.assertIn('formaction="/plan#categories-end"', page)
+        self.assertIn('formaction="/plan#spending-end"', page)
+        self.assertIn('id="categories-end"', page)
+        self.assertIn('id="spending-end"', page)
+        self.assertGreater(
+            page.index('aria-label="Add another category"'),
+            page.index('name="category_name_1"'),
+        )
+        self.assertGreater(
+            page.index('aria-label="Add another spending row"'),
+            page.index('name="spending_date_1"'),
+        )
+        self.assertNotIn('class="plan-row cat-cols plan-row-new"', page)
+        self.assertNotIn('class="plan-row spend-cols plan-row-new"', page)
+        self.assertNotIn("autofocus", page)
 
     def test_add_category_keeps_typed_values_without_saving(self) -> None:
         fields = self.plan_fields(
@@ -1190,6 +1205,14 @@ class MoneyPlanTests(unittest.TestCase):
         self.assertIn('value="Rent"', page)
         self.assertIn('value="October rent"', page)
         self.assertIn("2 of 100 category rows", page)
+        self.assertIn('id="plan-cat-2"', page)
+        self.assertIn("plan-row-new", page)
+        self.assertIn('aria-label="Category 2 name" autocomplete="off" autofocus', page)
+        self.assertNotIn('id="plan-cat-1" class="plan-row cat-cols plan-row-new"', page)
+        self.assertGreater(
+            page.index('aria-label="Add another category"'),
+            page.index('name="category_name_2"'),
+        )
         self.assertNotIn("What the numbers say", page)
 
     def test_add_spending_keeps_typed_values_without_saving(self) -> None:
@@ -1212,6 +1235,13 @@ class MoneyPlanTests(unittest.TestCase):
         self.assertIn('value="Amina"', page)
         self.assertIn('value="October rent"', page)
         self.assertIn("2 of 100 spending rows", page)
+        self.assertIn('id="plan-spend-2"', page)
+        self.assertIn("plan-row-new", page)
+        self.assertIn('aria-label="Spending row 2 date" autofocus', page)
+        self.assertGreater(
+            page.index('aria-label="Add another spending row"'),
+            page.index('name="spending_date_2"'),
+        )
         self.assertNotIn("What the numbers say", page)
 
     def test_extra_category_rows_reach_the_inline_analysis(self) -> None:

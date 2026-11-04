@@ -329,18 +329,24 @@ form is an ordinary HTML form with no JavaScript:
 2. **Categories** — name your own categories, in your own words. Each row takes an
    optional planned amount and an **Essential** or **Flexible** flag. There is no fixed
    category list. Blank rows are ignored, and at least two named categories are required.
-   The **+** button beside the heading adds rows, from one up to 100; it preserves every
+   The **+** button under the list adds rows, from one up to 100; it preserves every
    value you have typed and does not save a plan.
 3. **Spending** — one row per purchase or payment: date, one of your category names,
    amount and an optional note. Category matching ignores capitalisation, and entries in
    a category with no planned amount are still included and marked **No plan**. The
-   **+** button beside this heading adds rows, from one up to 100, with the same
+   **+** button under this list adds rows, from one up to 100, with the same
    preserve-and-do-not-save behaviour.
 4. **Review** — confirm the numbers are made up, then select **Run my analysis**.
 
 Amounts accept `2,500`, `2500`, `12 500` and `KES 2500.50`, and are stored as integer
 cents. The form starts with one category row and one spending row; the **+** buttons grow
 either list to 100. A plan cannot hold more than those limits.
+
+Adding a row is seamless with no JavaScript. The **+** control sits in a bar under each
+list. Pressing it posts the whole draft back to `/plan`, and the server re-renders the
+form with one more row: every value you typed is still there, the new row slides in, and
+the page lands on the end of that list so the fresh row and the **+** button stay in view.
+Nothing is validated or saved on this round-trip.
 
 Selecting **Run my analysis** keeps you on `/plan`: the page returns with every entered
 value still in the form and the analysis inserted below it at `#analysis`. There is no
@@ -633,7 +639,8 @@ and negative values), draft validation (names, duplicates, unknown spending cate
 dates, bounds, at least two categories and one spending row, synthetic confirmation),
 integer-cent analysis (planned/spent/left/unallocated, category statuses, essential and
 flexible shares, daily average), and the web flow: form rendering, adding category and
-spending rows while preserving input without saving, both 100-row limits, submission that
+spending rows under the list while preserving input without saving, the end-of-list
+fragment targets and the animated new row, both 100-row limits, submission that
 renders the analysis, charts and receipt in the same page with no redirect or saved file,
 validation errors that preserve input and render no analysis, cross-site and
 wrong-content-type guards, injected-text escaping, analysis with zero planned amounts,
@@ -692,6 +699,8 @@ sign-in while an unsafe `next` falls back to `/plan`.
 | The Plan It logo is a cached same-origin asset, not a data URI | A brand image is reused and cacheable; serving it from `/assets/` keeps the HTML small and lets `img-src` stay narrow at `'self' data:` |
 | A 13-second wait with a linear bar and a skip link | The duration is a deliberate product choice for the demo; a linear fill matches the actual wait, and **Continue now** keeps it from being a trap |
 | Button motion via CSS only, with a reduced-motion branch | Feedback on click should never depend on a script or a network round-trip; the same rules collapse to no motion when the OS asks for it |
+| The add-row **+** sits under its list, not beside the heading | New rows appear at the bottom of the list, so keeping the control there means the user never loses the button off-screen; the counter shares the same bar |
+| Adding a row round-trips the draft instead of editing the DOM | With no JavaScript the server must own the row count; `formnovalidate` plus an end-of-list `formaction` fragment re-renders the form without validating or saving, and the new row's `row-in` animation and `scroll-margin-top` landing make the reload feel like an insert |
 | Read-only SQLite URI plus `query_only` | The dashboard cannot accidentally write, even if a handler is wrong; each request gets its own short-lived connection |
 | Fixed sort and filter allow-lists | Untrusted input never becomes SQL text; `LIKE` wildcards are escaped and ordering is chosen from a dict |
 | Shared `theme.py` and `components.py` | The report, dashboard and planner use one visual language and one set of escaping/format helpers, so fixes apply to both |
@@ -755,7 +764,7 @@ external services.
   comparison between periods. It does not import the sample warehouse or an uploaded
   CSV, and it has no recurring-entry or currency-conversion support; all amounts are KES.
 - The planner form starts with one category row and one spending row, each extendable
-  to 100 with its **+** button. Every submission renders the analysis in the response
+  to 100 with the **+** button under its list. Every submission renders the analysis in the response
   and stores nothing: there is no history, no saved plan, no result link and no file to
   delete. Opening `/plan` again starts from a blank form.
 - Because nothing is saved, the analysis exists only in the page that answered the

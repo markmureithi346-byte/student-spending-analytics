@@ -28,6 +28,7 @@ useful to whoever maintains this project next — including future me.
 | 18. Local demo accounts | done | `accounts.py`, `/signup`, `/login`, `/logout`, scrypt hashes, hashed session tokens, gated `/plan` and `/upload` with the sample dashboard still public, 157 tests, browser-checked at 1440 px, 1280 px and 390 px |
 | 19. Sign-in loading screen and button motion | done | authenticated `/welcome` with an animated tick, rings and progress bar, `meta refresh` hand-off after 2.6 s, CSS-only button hover/press/sheen across the platform, reduced-motion and phone fallbacks, 158 tests, browser-checked at 1440 px and 390 px with the redirect confirmed |
 | 20. Plan It brand on the loading screen | done | packaged `plan-it-logo.jpg` served from `/assets/`, `img-src 'self' data:`, wordmark and slogan on `/welcome`, 13-second linear countdown, animated logo tile and rings, 158 tests, browser-checked at 1440 px and 390 px with a measured 13.2-second redirect |
+| 21. Bottom add-row controls | done | **+** bars under both planner lists, `#categories-end`/`#spending-end` anchors, `row-in` animation on the new row, `scroll-margin-top` landing the new row and control in view, draft preserved through the no-save round-trip, 158 tests, 26 browser checks at 1280 px plus a reduced-motion pass |
 
 ## Decisions worth remembering
 
@@ -190,6 +191,19 @@ useful to whoever maintains this project next — including future me.
   than a normal hand-off, so an aggressive ease-out would race the bar to 90% and then
   appear stuck. Linear progress plus **Continue now** keeps the screen honest and
   escapable.
+- **The add-row control belongs at the end of the list it grows.** With the **+** beside
+  the heading, the new row appeared off-screen; the control and its counter now sit in a
+  dashed bar under the rows, so the button is where the eye already is when the list
+  ends.
+- **"Seamless" without script means the draft round-trip, not a client-side insert.**
+  The **+** submits the whole form with `formnovalidate`; the server re-renders with one
+  more row and the same typed values. The `formaction` fragment names an end-of-list
+  anchor, so the browser's own fragment scroll does the rest. No validation runs and
+  nothing is stored on this path.
+- **The new row animates and the landing point is tuned with `scroll-margin-top`.**
+  The freshly added row carries `row-in` and an `autofocus`; `scroll-margin-top: 120px`
+  on the end anchor makes the smooth fragment scroll stop with the new row and the
+  **+** bar both visible, instead of aligning the anchor to the very top edge.
 
 ## Bugs hit during development
 
@@ -413,6 +427,34 @@ useful to whoever maintains this project next — including future me.
     *Lesson:* easing designed for a short transition is misleading when stretched across
     a countdown.
 
+32. **A negative "test" of the new-row class failed on the stylesheet.** The initial-render
+    test asserted `assertNotIn("plan-row-new", page)`, but the page's inline `<style>`
+    contains the `.plan-row-new` selector, so the CSS string tripped the check while the
+    markup was correct. *Fix:* assert against the markup class attribute instead
+    (`class="plan-row cat-cols plan-row-new"`). *Lesson:* a rendered page is HTML plus
+    CSS plus text; negative assertions must name the surface they mean.
+
+33. **The new row landed just above the viewport.** The `#categories-end` anchor sat right
+    after the rows and aligned the anchor top to the viewport top, pushing the fresh row
+    off-screen by a few pixels. A guess at a negative `scroll-margin-top` then overshot on
+    a short page and clamped at the maximum scroll, hiding the row entirely. A positive
+    120 px margin then worked on desktop but put the taller, stacked phone row 46 px above
+    the fold. *Fix:* `scroll-margin-top: 200px`, measured live to leave the new row at
+    about 155 px with the **+** bar just below on desktop, and the row at about 34 px on a
+    390 px phone. *Lesson:* scroll offsets respond to page length, content below the
+    target and row height at each breakpoint; verify the landing position at more than one
+    width, not just that scrolling happened.
+
+34. **Fragment scrolling appeared not to work, twice for the wrong reason.** The first
+    probe sampled `window.scrollY` a few hundred milliseconds after load and saw zero,
+    because `scroll-behavior: smooth` turns the fragment jump into an animation that
+    starts late and takes about a second. The same probe also expected `autofocus` to
+    focus the new field, but Chromium does not process `autofocus` on a navigation caused
+    by a form submission. *Fix:* wait for the scroll to settle before measuring, assert the
+    rendered `autofocus` attribute rather than active focus, and document the browser
+    behaviour. *Lesson:* a timing artifact can look exactly like a missing feature; also,
+    `autofocus` is a best-effort hint across navigation types.
+
 ## Concepts this project exercises
 
 Extraction boundaries; per-row error isolation; normalisation vs validation; policy for
@@ -436,8 +478,10 @@ with a dummy hash; in-memory rate limiting with `Retry-After`; `meta refresh` as
 no-script redirect; SVG stroke-dash drawing and CSS keyframe staging behind a
 `prefers-reduced-motion` branch; pseudo-element sheen and gradient-position transitions
 on buttons; same-origin static assets with a narrow `img-src` allowance; package data for
-shipped media; linear progress pacing over a long staged wait; and the difference between
-"valid" and "unusual".
+shipped media; linear progress pacing over a long staged wait; `formaction` fragments and
+`formnovalidate` draft round-trips for add-row controls; `scroll-margin-top` tuning for
+fragment landings under smooth scrolling; entrance keyframes for a server-rendered row;
+and the difference between "valid" and "unusual".
 
 ## Next exercises (for the learner, not the pipeline)
 
