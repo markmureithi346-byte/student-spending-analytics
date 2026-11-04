@@ -28,7 +28,7 @@ useful to whoever maintains this project next — including future me.
 | 18. Local demo accounts | done | `accounts.py`, `/signup`, `/login`, `/logout`, scrypt hashes, hashed session tokens, gated `/plan` and `/upload` with the sample dashboard still public, 157 tests, browser-checked at 1440 px, 1280 px and 390 px |
 | 19. Sign-in loading screen and button motion | done | authenticated `/welcome` with an animated tick, rings and progress bar, `meta refresh` hand-off after 2.6 s, CSS-only button hover/press/sheen across the platform, reduced-motion and phone fallbacks, 158 tests, browser-checked at 1440 px and 390 px with the redirect confirmed |
 | 20. Plan It brand on the loading screen | done | packaged `plan-it-logo.jpg` served from `/assets/`, `img-src 'self' data:`, wordmark and slogan on `/welcome`, 13-second linear countdown, animated logo tile and rings, 158 tests, browser-checked at 1440 px and 390 px with a measured 13.2-second redirect |
-| 21. Bottom add-row controls | done | **+** bars under both planner lists, `#categories-end`/`#spending-end` anchors, `scroll-margin-top` landing the new row and control in view, `scroll-behavior: auto` on served pages so the landing is instant, no entrance animation, draft preserved through the no-save round-trip, 158 tests, 26 browser checks at 1280 px plus a 390 px phone pass and a reduced-motion pass, measured at about 250 ms per add |
+| 21. Bottom add-row controls | done | **+** bars under both planner lists, `#categories-end`/`#spending-end` anchors, `scroll-margin-top` landing the new row and control in view, `scroll-behavior: auto` on served pages so the landing is instant, a 0.26 s `row-pop` on only the new row, draft preserved through the no-save round-trip, 158 tests, 26 browser checks at 1280 px plus a 390 px phone pass and a reduced-motion pass, measured at about 250–650 ms per add |
 
 ## Decisions worth remembering
 
@@ -200,12 +200,14 @@ useful to whoever maintains this project next — including future me.
   more row and the same typed values. The `formaction` fragment names an end-of-list
   anchor, so the browser's own fragment scroll does the rest. No validation runs and
   nothing is stored on this path.
-- **The add-row landing must be instant, so the served pages opt out of smooth scroll.**
-  A motionless, immediate result won: the row is rendered with no entrance animation,
-  `html { scroll-behavior: auto; }` overrides the theme on every served page, and
-  `scroll-margin-top: 200px` places the new row and the **+** bar in view the moment the
-  response paints. Smooth scrolling stays on the static report, where it is only ever
-  used for in-page links.
+- **The landing is instant; only the new row moves.** The row is rendered at its final
+  position with `html { scroll-behavior: auto; }` overriding the theme and
+  `scroll-margin-top: 200px` placing the new row and the **+** bar in view the moment the
+  response paints. In that already-final layout the fresh row alone plays a 0.26 s
+  `row-pop` (fade plus a 4 px lift and 3% scale), so the motion happens where the student
+  is already looking instead of dragging the whole page. Existing rows stay still and the
+  reduced-motion query disables the pop. Smooth scrolling stays on the static report,
+  where it is only ever used for in-page links.
 
 ## Bugs hit during development
 
@@ -468,6 +470,19 @@ useful to whoever maintains this project next — including future me.
     *Lesson:* a reload is read as "the app jumped and then did something"; every extra
     transition layered on top of it reads as malfunction, however smooth it looks on its
     own. Verify perceived timing end to end, not each effect in isolation.
+
+36. **The replacement pop appeared not to run in headless Chromium.** With `row-pop`
+    restored on the new row, the computed style reported `animation-name: row-pop`,
+    `playState: running`, but `startTime: null` and `currentTime: 0` for up to two
+    seconds, while the row held the from-frame because of `fill-mode: both`. Probing
+    showed animations on elements that are laid out but offscreen at parse time stay
+    pending until their first paint; visible elements, empty elements and clipped
+    elements start immediately. *Fix:* treat pending as not-yet-started and poll the
+    computed style until opacity is 1 and the transform is the identity matrix, rather
+    than asserting an exact start time or the string `none` (a settled transform computes
+    as `matrix(1, 0, 0, 1, 0, 0)`). *Lesson:* a headless browser can legitimately defer
+    an animation the user would see at once; assert the end state and the declared
+    animation, and never infer "no animation" from a single early sample.
 
 ## Concepts this project exercises
 

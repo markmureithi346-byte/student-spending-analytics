@@ -274,6 +274,11 @@ button:focus-visible { outline: 3px solid rgba(240,171,252,.55); outline-offset:
 .plan-row-head { padding: 0 2px 4px; color: #b9a3d8; font-size: 10.5px;
   text-transform: uppercase; letter-spacing: .06em; font-weight: 800; }
 .plan-row { margin-bottom: 7px; }
+.plan-row-new { animation: row-pop .26s ease-out both; }
+@keyframes row-pop {
+  from { opacity: 0; transform: translateY(4px) scale(.97); }
+  to { opacity: 1; transform: none; }
+}
 .plan-row input, .plan-row select { padding: 8px 9px; font-size: 13px; }
 .row-no { color: #a28cc4; font-size: 11px; font-weight: 700;
   font-variant-numeric: tabular-nums; text-align: right; }
@@ -590,6 +595,7 @@ button:focus-visible { outline: 3px solid rgba(240,171,252,.55); outline-offset:
 @media (prefers-reduced-motion: reduce) {
   .button, button, .account-links .account-cta, .plan-add-button span,
   .upload-form input[type="file"]::file-selector-button,
+  .plan-row-new,
   .welcome-card, .welcome-card::before, .welcome-halo, .welcome-ring,
   .welcome-logo-shell, .welcome-logo, .welcome-progress span,
   .welcome-progress span::after, .loading-dots i { animation: none; transition: none; }
@@ -2081,7 +2087,8 @@ def _category_row(number: int, row: object, *, is_new: bool = False) -> str:
     essential = bool(getattr(row, "essential", False))
     autofocus = " autofocus" if is_new else ""
     return f"""
-      <div class="plan-row cat-cols" id="plan-cat-{number}">
+      <div class="plan-row cat-cols{" plan-row-new" if is_new else ""}"
+        id="plan-cat-{number}">
         <span class="row-no" aria-hidden="true">{number:02d}</span>
         <input name="category_name_{number}" type="text" maxlength="{MAX_CATEGORY_NAME_LENGTH}"
           value="{escape_attr(getattr(row, 'name', ''))}" placeholder="e.g. Food"
@@ -2099,7 +2106,8 @@ def _category_row(number: int, row: object, *, is_new: bool = False) -> str:
 def _spending_row(number: int, row: object, *, is_new: bool = False) -> str:
     autofocus = " autofocus" if is_new else ""
     return f"""
-      <div class="plan-row spend-cols" id="plan-spend-{number}">
+      <div class="plan-row spend-cols{" plan-row-new" if is_new else ""}"
+        id="plan-spend-{number}">
         <span class="row-no" aria-hidden="true">{number:02d}</span>
         <input name="spending_date_{number}" type="date"
           value="{escape_attr(getattr(row, 'spent_on', ''))}"
@@ -2868,7 +2876,7 @@ class DashboardServer(ThreadingHTTPServer):
 
 class DashboardHandler(BaseHTTPRequestHandler):
     server: DashboardServer
-    server_version = "StudentSpendingDashboard/2.6.1"
+    server_version = "StudentSpendingDashboard/2.6.2"
     sys_version = ""
     timeout = 30
 

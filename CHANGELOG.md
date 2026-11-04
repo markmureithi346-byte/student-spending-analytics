@@ -4,6 +4,29 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.2] - 2026-11-04
+
+Gives the newly added planner row a visible entrance: it now pops in with a short
+fade-and-lift while the page still lands instantly at the end of the list.
+
+### Added
+
+- `.plan-row-new` carries a 0.26 s `row-pop` keyframe (opacity 0 to 1, 4 px lift and
+  3% scale) on the row rendered by an `add_category` or `add_spending` round-trip. Only
+  the freshly added row animates; existing rows keep `animation: none`. The reduced-motion
+  media query disables it like every other transition.
+
+### Changed
+
+- The animation never delays the landing: `scroll-behavior: auto` and
+  `scroll-margin-top: 200px` still put the new row and the **+** bar in view on first
+  paint, so the pop plays where the student is already looking.
+
+Verified at 1280 px: one **+** press returns in under 700 ms, the new row sits 159 px
+from the top with `animation-name: row-pop` at 0.26 s, row 1 stays `none`, the draft is
+preserved, the row settles at opacity 1, and a reduced-motion context reports `none`.
+The suite is still 158 tests.
+
 ## [2.6.1] - 2026-11-04
 
 Removes the glitch when pressing **+** on the planner: the added row now appears

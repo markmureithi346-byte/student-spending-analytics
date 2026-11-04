@@ -1180,7 +1180,8 @@ class MoneyPlanTests(unittest.TestCase):
             page.index('aria-label="Add another spending row"'),
             page.index('name="spending_date_1"'),
         )
-        self.assertNotIn("plan-row-new", page)
+        self.assertNotIn('class="plan-row cat-cols plan-row-new"', page)
+        self.assertNotIn('class="plan-row spend-cols plan-row-new"', page)
         self.assertNotIn("autofocus", page)
         self.assertIn("html { scroll-behavior: auto; }", page)
 
@@ -1206,8 +1207,9 @@ class MoneyPlanTests(unittest.TestCase):
         self.assertIn('value="October rent"', page)
         self.assertIn("2 of 100 category rows", page)
         self.assertIn('id="plan-cat-2"', page)
+        self.assertEqual(page.count('class="plan-row cat-cols plan-row-new"'), 1)
         self.assertIn('aria-label="Category 2 name" autocomplete="off" autofocus', page)
-        self.assertNotIn("plan-row-new", page)
+        self.assertIn('id="plan-cat-1"', page)
         self.assertGreater(
             page.index('aria-label="Add another category"'),
             page.index('name="category_name_2"'),
@@ -1235,7 +1237,9 @@ class MoneyPlanTests(unittest.TestCase):
         self.assertIn('value="October rent"', page)
         self.assertIn("2 of 100 spending rows", page)
         self.assertIn('id="plan-spend-2"', page)
+        self.assertEqual(page.count('class="plan-row spend-cols plan-row-new"'), 1)
         self.assertIn('aria-label="Spending row 2 date" autofocus', page)
+        self.assertIn('id="plan-spend-1"', page)
         self.assertGreater(
             page.index('aria-label="Add another spending row"'),
             page.index('name="spending_date_2"'),
