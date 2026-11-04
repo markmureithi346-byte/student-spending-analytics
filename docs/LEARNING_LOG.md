@@ -29,6 +29,7 @@ useful to whoever maintains this project next — including future me.
 | 19. Sign-in loading screen and button motion | done | authenticated `/welcome` with an animated tick, rings and progress bar, `meta refresh` hand-off after 2.6 s, CSS-only button hover/press/sheen across the platform, reduced-motion and phone fallbacks, 158 tests, browser-checked at 1440 px and 390 px with the redirect confirmed |
 | 20. Plan It brand on the loading screen | done | packaged `plan-it-logo.jpg` served from `/assets/`, `img-src 'self' data:`, wordmark and slogan on `/welcome`, 13-second linear countdown, animated logo tile and rings, 158 tests, browser-checked at 1440 px and 390 px with a measured 13.2-second redirect |
 | 21. Bottom add-row controls | done | **+** bars under both planner lists, `#categories-end`/`#spending-end` anchors, `scroll-margin-top` landing the new row and control in view, `scroll-behavior: auto` on served pages so the landing is instant, a 0.26 s `row-pop` on only the new row, draft preserved through the no-save round-trip, 158 tests, 26 browser checks at 1280 px plus a 390 px phone pass and a reduced-motion pass, measured at about 250–650 ms per add |
+| 22. Device time instead of typed dates | done | date field and column removed from spending rows, submission time from `datetime.now().astimezone()` stored on the analysis, **Recorded** stamp in the entries summary, receipt meta and code line, daily average replaced by average per spending row, 160 tests, 10 browser checks at 1280 px, phone and reduced-motion passes unchanged |
 
 ## Decisions worth remembering
 
@@ -208,6 +209,13 @@ useful to whoever maintains this project next — including future me.
   is already looking instead of dragging the whole page. Existing rows stay still and the
   reduced-motion query disables the pop. Smooth scrolling stays on the static report,
   where it is only ever used for in-page links.
+- **One submission timestamp replaces a date on every spending row.** With no JavaScript
+  the form cannot ask the browser for its clock, but `/plan` is served from the user's own
+  machine on loopback, so `datetime.now().astimezone()` at POST time *is* the device
+  clock. One stamp removes a field from up to 100 rows, still puts a real time on the
+  receipt, and avoids asking students to invent dates. The daily average depended on the
+  per-row dates, so it was replaced with an honest average per spending row instead of
+  inventing a period.
 
 ## Bugs hit during development
 
@@ -483,6 +491,17 @@ useful to whoever maintains this project next — including future me.
     as `matrix(1, 0, 0, 1, 0, 0)`). *Lesson:* a headless browser can legitimately defer
     an animation the user would see at once; assert the end state and the declared
     animation, and never infer "no animation" from a single early sample.
+
+37. **The frozen-clock receipt test expected UTC and got local time.** The test patched
+    `web.datetime.now` to return a UTC datetime, then compared the rendered stamp to that
+    value. The handler calls `.astimezone()`, which converted 15:30 UTC to 18:30 in the
+    machine's timezone, so the assertion found no match even though the code was right.
+    *Fix:* make the patched `now()` return a stub whose `astimezone()` returns the fixed,
+    already-local datetime, and keep the browser check comparing the parsed stamp to the
+    browser clock. Since the stamp renders to the minute, that check allows 90 seconds
+    for the truncated seconds. *Lesson:* when testing a clock, freeze the value at the
+    point it is consumed; a UTC fixture is not automatically what the local-time path
+    produces.
 
 ## Concepts this project exercises
 

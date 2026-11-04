@@ -41,7 +41,7 @@ For one student's own numbers, the money planner answers:
 - Which of my own categories are over plan, under plan, unplanned or unused?
 - What share of spending went to each category, and to essential versus flexible needs?
 - What does the planned-versus-actual comparison look like as a graph?
-- What is the average daily spend across the dates I entered?
+- What is the average spend per spending row?
 
 ## Architecture
 
@@ -331,11 +331,12 @@ form is an ordinary HTML form with no JavaScript:
    category list. Blank rows are ignored, and at least two named categories are required.
    The **+** button under the list adds rows, from one up to 100; it preserves every
    value you have typed and does not save a plan.
-3. **Spending** — one row per purchase or payment: date, one of your category names,
-   amount and an optional note. Category matching ignores capitalisation, and entries in
-   a category with no planned amount are still included and marked **No plan**. The
-   **+** button under this list adds rows, from one up to 100, with the same
-   preserve-and-do-not-save behaviour.
+3. **Spending** — one row per purchase or payment: one of your category names, amount
+   and an optional note. There is no date field; each entry is stamped with the clock on
+   the device you are using when you run the analysis. Category matching ignores
+   capitalisation, and entries in a category with no planned amount are still included and
+   marked **No plan**. The **+** button under this list adds rows, from one up to 100,
+   with the same preserve-and-do-not-save behaviour.
 4. **Review** — confirm the numbers are made up, then select **Run my analysis**.
 
 Amounts accept `2,500`, `2500`, `12 500` and `KES 2500.50`, and are stored as integer
@@ -370,8 +371,11 @@ redirect, no saved plan, no result link and no separate file. The analysis shows
 
 ![Money plan receipt](docs/images/plan-receipt.png)
 
-Everything is calculated from the submitted values: totals, shares, the daily average
-over the entered date span, and the over-plan and unplanned lists. The page does not
+Everything is calculated from the submitted values: totals, shares, the average per
+spending row, and the over-plan and unplanned lists. Because `/plan` is served from your
+own machine on loopback, the server clock is the device clock; the submission time is
+stored on the analysis and printed on the receipt as **Recorded**, in the entries summary
+and in the receipt code line. The page does not
 advise on financial products or tell the student what they should spend. The graphs are
 generated locally as inline SVG; no chart service, remote font or third-party request is
 involved.
@@ -637,12 +641,13 @@ enforcement and CLI dispatch.
 
 The money planner adds tests for amount parsing (`2,500`, `KES 2500.50`, `1 000`, invalid
 and negative values), draft validation (names, duplicates, unknown spending categories,
-dates, bounds, at least two categories and one spending row, synthetic confirmation),
-integer-cent analysis (planned/spent/left/unallocated, category statuses, essential and
-flexible shares, daily average), and the web flow: form rendering, adding category and
-spending rows under the list while preserving input without saving, the end-of-list
-fragment targets and the instant landing with a pop-in on the new row, both 100-row limits, submission that
-renders the analysis, charts and receipt in the same page with no redirect or saved file,
+bounds, at least two categories and one spending row, synthetic confirmation), date-free
+spending entries, integer-cent analysis (planned/spent/left/unallocated, category statuses,
+essential and flexible shares, average per spending row), and the web flow: form rendering,
+adding category and spending rows under the list while preserving input without saving, the
+end-of-list fragment targets and the instant landing with a pop-in on the new row, both
+100-row limits, submission that renders the analysis, charts and receipt in the same page
+with no redirect or saved file, the receipt timestamp coming from the device clock,
 validation errors that preserve input and render no analysis, cross-site and
 wrong-content-type guards, injected-text escaping, analysis with zero planned amounts,
 largest-remainder rounding that adds up to 100.0%, and receipt figures that match the
@@ -711,6 +716,7 @@ sign-in while an unsafe `next` falls back to `/plan`.
 | No plan ids or saved results | With nothing stored, there is no link to leak or file to delete; every submission reflects only the form the student just submitted |
 | Largest-remainder share rounding | Displayed one-decimal shares should match the whole; naive rounding of seven equal parts shows 14.3% each and a 100.1% total, so the spare tenth goes to the largest remainders |
 | Receipt is a print view, not a stored document | The receipt reuses the analysis values and the browser's print/save-as-PDF flow, so it adds no file, link or retention obligation |
+| Spending rows carry the submission time instead of a typed date | The app is served from the user's own machine on loopback, so `datetime.now().astimezone()` is the device clock; one timestamp removes a field from every row and is printed on the receipt. Per-row dates were the only basis for the daily average, so that metric became the average per spending row rather than inventing a period |
 | Animated CSS backdrop with a still alternative | The moving gradient, stars, orbs, drifting sparks and receipt sheen are pure CSS; `prefers-reduced-motion` disables them and the print stylesheet removes them entirely |
 | Editable install with a console script | One command to run the pipeline; the `src/` layout also prevents tests from importing the package by accident |
 | CI runs the pipeline twice | Proves idempotency on a clean machine, not just in a local wrapper |

@@ -4,6 +4,30 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.0] - 2026-11-04
+
+Removes the date field from every spending row. Entries are now stamped with the
+device clock when the analysis runs, and that time appears on the receipt.
+
+### Changed
+
+- Spending rows take a category, amount and optional note only; the `spending_date_N`
+  input, its column, its validation error and the date column in the analysis entries
+  table are gone. A posted `spending_date_N` value is ignored.
+- The submission time is read with `datetime.now().astimezone()` when **Run my
+  analysis** is handled. Because `/plan` is served locally, that is the device clock.
+  It is stored on the analysis and shown as **Recorded** in the entries summary and the
+  receipt, and in the receipt code line.
+- The date-range and daily-average figures had no basis without dates, so the insight
+  now reports the average per spending row, and the entries are listed in the order they
+  were entered instead of newest first.
+- The spending **+** control autofocuses the new row's category field.
+
+Verified at 1280 px: the form and header contain no date field, the receipt shows
+`<time datetime="…">04 Nov 2026, 15:35</time>` matching the browser clock, the entries
+table has no Date column, and the insight reads "averaging KES 800.00 per row". The suite
+is now 160 tests.
+
 ## [2.6.2] - 2026-11-04
 
 Gives the newly added planner row a visible entrance: it now pops in with a short

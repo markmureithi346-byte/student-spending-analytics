@@ -18,7 +18,7 @@ import time
 import urllib.parse
 import webbrowser
 from dataclasses import dataclass, replace
-from datetime import date
+from datetime import date, datetime
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -269,8 +269,8 @@ button:focus-visible { outline: 3px solid rgba(240,171,252,.55); outline-offset:
 .plan-rows { margin-top: 14px; }
 .plan-row-head, .plan-row { display: grid; gap: 8px; align-items: center; }
 .cat-cols { grid-template-columns: 30px minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr); }
-.spend-cols { grid-template-columns: 30px minmax(0, 1.1fr) minmax(0, 1.5fr)
-  minmax(0, .9fr) minmax(0, 1.9fr); }
+.spend-cols { grid-template-columns: 30px minmax(0, 1.6fr)
+  minmax(0, .9fr) minmax(0, 2fr); }
 .plan-row-head { padding: 0 2px 4px; color: #b9a3d8; font-size: 10.5px;
   text-transform: uppercase; letter-spacing: .06em; font-weight: 800; }
 .plan-row { margin-bottom: 7px; }
@@ -2109,13 +2109,10 @@ def _spending_row(number: int, row: object, *, is_new: bool = False) -> str:
       <div class="plan-row spend-cols{" plan-row-new" if is_new else ""}"
         id="plan-spend-{number}">
         <span class="row-no" aria-hidden="true">{number:02d}</span>
-        <input name="spending_date_{number}" type="date"
-          value="{escape_attr(getattr(row, 'spent_on', ''))}"
-          aria-label="Spending row {number} date"{autofocus}>
         <input name="spending_category_{number}" type="text"
           maxlength="{MAX_CATEGORY_NAME_LENGTH}"
           value="{escape_attr(getattr(row, 'category', ''))}" placeholder="Your category"
-          aria-label="Spending row {number} category" autocomplete="off">
+          aria-label="Spending row {number} category" autocomplete="off"{autofocus}>
         <input name="spending_amount_{number}" type="text" inputmode="decimal"
           value="{escape_attr(getattr(row, 'amount', ''))}" placeholder="0.00"
           aria-label="Spending row {number} amount in KES">
@@ -2295,10 +2292,11 @@ def render_plan_page(
       <h2 id="spending-title">What you actually spent</h2>
       <p class="lead">One row per purchase or payment. Use a category name from above;
         matching ignores capitalisation. Use the + under the list to add a row. Leave
-        any row blank if you do not need it.</p>
+        any row blank if you do not need it. There is no date to type: every entry is
+        stamped with this device's clock when you run the analysis.</p>
       <div class="plan-rows">
         <div class="plan-row-head spend-cols">
-          <span>#</span><span>Date</span><span>Category</span>
+          <span>#</span><span>Category</span>
           <span>Amount KES</span><span>Note</span>
         </div>
         {spendings_html}
@@ -2306,7 +2304,7 @@ def render_plan_page(
       <div id="spending-end"></div>
       {add_spending}
       <p class="plan-section-note">At least one complete spending row is needed.
-        Dates use YYYY-MM-DD in the browser's date picker.</p>
+        The time comes from the device you are using and appears on the receipt.</p>
     </section>
 
     <section class="panel" id="review" aria-labelledby="review-title">
@@ -2485,12 +2483,9 @@ def _plan_insights(plan: object, analysis: object) -> str:
             f"Essential categories are {percent(analysis.essential_share_pct)} of "
             f"spending (KES {money(analysis.essential_spent_cents / 100)})."
         )
-    day_word = "day" if analysis.days_covered == 1 else "days"
-    active_word = "day" if analysis.active_days == 1 else "days"
     items.append(
-        f"Your entries cover {integer(analysis.days_covered)} {day_word} "
-        f"({integer(analysis.active_days)} {active_word} with spending), averaging "
-        f"KES {money(analysis.average_daily_cents / 100)} per day."
+        f"You recorded {_plural(len(plan.spendings), 'spending row')}, averaging "
+        f"KES {money(analysis.average_entry_cents / 100)} per row."
     )
     if analysis.planned_cents and analysis.unallocated_cents > 0:
         items.append(
@@ -2635,35 +2630,34 @@ def _plan_category_panel(plan: object, analysis: object) -> str:
   </section>"""
 
 
+def _recorded_stamp(value: datetime) -> str:
+    iso = escape_attr(value.isoformat(timespec="minutes"))
+    label = escape_attr(value.strftime("%d %b %Y, %H:%M"))
+    return f'<time datetime="{iso}">{label}</time>'
+
+
 def _plan_spending_panel(plan: object, analysis: object) -> str:
-    entries = sorted(
-        plan.spendings,
-        key=lambda entry: (entry.spent_on, entry.category, entry.amount_cents),
-        reverse=True,
-    )
     rows = [
         [
-            escape_attr(entry.spent_on.isoformat()),
             escape_attr(entry.category),
             escape_attr(entry.note or "—"),
             money(entry.amount_cents / 100),
         ]
-        for entry in entries
+        for entry in plan.spendings
     ]
     return f"""
   <section class="panel" id="analysis-spending"
     aria-labelledby="analysis-spending-title">
     <p class="eyebrow"><span class="section-no">08</span> Entries</p>
     <h2 id="analysis-spending-title">The spending behind the totals</h2>
-    <p class="lead">Newest first. These rows are the source of every category total and
-      graph above.</p>
+    <p class="lead">In the order you entered them. These rows are the source of every
+      category total and graph above.</p>
     <div class="table-meta">
       <span>{integer(len(rows))} entries</span>
       <span>KES {money(analysis.spent_cents / 100)} total</span>
-      <span>{escape_attr(analysis.first_date.isoformat())} to
-        {escape_attr(analysis.last_date.isoformat())}</span>
+      <span>Recorded {_recorded_stamp(analysis.recorded_at)}</span>
     </div>
-    {table([("Date", False), ("Category", False), ("Note", False),
+    {table([("Category", False), ("Note", False),
             ("Amount KES", True)], rows)}
   </section>"""
 
@@ -2736,8 +2730,7 @@ def _plan_receipt_panel(plan: MoneyPlan, analysis: PlanAnalysis) -> str:
         <dl class="receipt-meta">
           <div><dt>Name</dt><dd>{escape_attr(plan.student_name)}</dd></div>
           <div><dt>Entries</dt><dd>{integer(len(plan.spendings))}</dd></div>
-          <div><dt>Period</dt><dd>{escape_attr(analysis.first_date.isoformat())} to
-            {escape_attr(analysis.last_date.isoformat())}</dd></div>
+          <div><dt>Recorded</dt><dd>{_recorded_stamp(analysis.recorded_at)}</dd></div>
           <div><dt>Method</dt><dd>{escape_attr(BUDGET_METHODS[plan.method])}</dd></div>
         </dl>
         <div class="receipt-rule" aria-hidden="true"></div>
@@ -2753,8 +2746,8 @@ def _plan_receipt_panel(plan: MoneyPlan, analysis: PlanAnalysis) -> str:
           synthetic learning numbers only</p>
         <div class="receipt-barcode" aria-hidden="true"></div>
         <p class="receipt-code" aria-hidden="true">SSA &middot;
-          {escape_attr(analysis.first_date.isoformat())} &middot;
-          {escape_attr(analysis.last_date.isoformat())}</p>
+          {escape_attr(analysis.recorded_at.strftime("%d %b %Y"))} &middot;
+          {escape_attr(analysis.recorded_at.strftime("%H:%M"))}</p>
       </article>
     </div>
     <p class="plan-section-note">To keep this receipt, print this page or choose
@@ -2876,7 +2869,7 @@ class DashboardServer(ThreadingHTTPServer):
 
 class DashboardHandler(BaseHTTPRequestHandler):
     server: DashboardServer
-    server_version = "StudentSpendingDashboard/2.6.2"
+    server_version = "StudentSpendingDashboard/2.7.0"
     sys_version = ""
     timeout = 30
 
@@ -3403,7 +3396,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             render_plan_page(
                 draft=draft,
                 plan=plan,
-                analysis=analyse(plan),
+                analysis=analyse(plan, recorded_at=datetime.now().astimezone()),
                 category_rows=category_rows,
                 spending_rows=spending_rows,
                 account=account,

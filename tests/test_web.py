@@ -15,6 +15,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
+from datetime import datetime, timezone
 from unittest import mock
 
 from student_spending import cli, config, database, personal, platform, web
@@ -1085,12 +1086,12 @@ class MoneyPlanTests(unittest.TestCase):
             ("Books", "", "flexible"),
             ("Savings", "1000", "essential"),
         ),
-        spendings: tuple[tuple[str, str, str, str], ...] = (
-            ("2026-10-01", "Rent", "6000", "October rent"),
-            ("2026-10-02", "Food", "3000", "Groceries"),
-            ("2026-10-02", "Food", "1500", "Lunch"),
-            ("2026-10-04", "Fun", "1800", "Concert"),
-            ("2026-10-04", "Books", "200", "Notebook"),
+        spendings: tuple[tuple[str, str, str], ...] = (
+            ("Rent", "6000", "October rent"),
+            ("Food", "3000", "Groceries"),
+            ("Food", "1500", "Lunch"),
+            ("Fun", "1800", "Concert"),
+            ("Books", "200", "Notebook"),
         ),
         synthetic: str | None = "yes",
     ) -> list[tuple[str, str]]:
@@ -1108,12 +1109,11 @@ class MoneyPlanTests(unittest.TestCase):
                     (f"category_essential_{number}", kind),
                 ]
             )
-        for number, (spent_on, category, amount, entry_note) in enumerate(
+        for number, (category, amount, entry_note) in enumerate(
             spendings, start=1
         ):
             fields.extend(
                 [
-                    (f"spending_date_{number}", spent_on),
                     (f"spending_category_{number}", category),
                     (f"spending_amount_{number}", amount),
                     (f"spending_note_{number}", entry_note),
@@ -1141,11 +1141,14 @@ class MoneyPlanTests(unittest.TestCase):
             "method_note",
             "synthetic",
             "category_name_1",
-            "spending_date_1",
+            "spending_category_1",
+            "spending_amount_1",
         ):
             self.assertIn(f'name="{control}"', page)
         self.assertNotIn('name="category_name_2"', page)
-        self.assertNotIn('name="spending_date_2"', page)
+        self.assertNotIn('name="spending_category_2"', page)
+        self.assertNotIn("spending_date_1", page)
+        self.assertIn("stamped with this device's clock", page)
         self.assertIn('action="/plan#analysis"', page)
         self.assertIn("There is no fixed category list", page)
         self.assertIn("Made-up numbers only.", page)
@@ -1178,7 +1181,7 @@ class MoneyPlanTests(unittest.TestCase):
         )
         self.assertGreater(
             page.index('aria-label="Add another spending row"'),
-            page.index('name="spending_date_1"'),
+            page.index('name="spending_category_1"'),
         )
         self.assertNotIn('class="plan-row cat-cols plan-row-new"', page)
         self.assertNotIn('class="plan-row spend-cols plan-row-new"', page)
@@ -1188,7 +1191,7 @@ class MoneyPlanTests(unittest.TestCase):
     def test_add_category_keeps_typed_values_without_saving(self) -> None:
         fields = self.plan_fields(
             categories=(("Rent", "6000", "essential"),),
-            spendings=(("2026-10-01", "Rent", "500", "October rent"),),
+            spendings=(("Rent", "500", "October rent"),),
         )
         fields.extend(
             [
@@ -1219,7 +1222,7 @@ class MoneyPlanTests(unittest.TestCase):
     def test_add_spending_keeps_typed_values_without_saving(self) -> None:
         fields = self.plan_fields(
             categories=(("Rent", "6000", "essential"),),
-            spendings=(("2026-10-01", "Rent", "500", "October rent"),),
+            spendings=(("Rent", "500", "October rent"),),
         )
         fields.extend(
             [
@@ -1230,19 +1233,21 @@ class MoneyPlanTests(unittest.TestCase):
         )
         status, _, page = self.post_form(fields)
         self.assertEqual(status, 200)
-        self.assertIn('name="spending_date_2"', page)
-        self.assertNotIn('name="spending_date_3"', page)
+        self.assertIn('name="spending_category_2"', page)
+        self.assertNotIn('name="spending_category_3"', page)
         self.assertIn('name="spending_rows" value="2"', page)
         self.assertIn('value="Amina"', page)
         self.assertIn('value="October rent"', page)
         self.assertIn("2 of 100 spending rows", page)
         self.assertIn('id="plan-spend-2"', page)
         self.assertEqual(page.count('class="plan-row spend-cols plan-row-new"'), 1)
-        self.assertIn('aria-label="Spending row 2 date" autofocus', page)
+        self.assertIn(
+            'aria-label="Spending row 2 category" autocomplete="off" autofocus', page
+        )
         self.assertIn('id="plan-spend-1"', page)
         self.assertGreater(
             page.index('aria-label="Add another spending row"'),
-            page.index('name="spending_date_2"'),
+            page.index('name="spending_category_2"'),
         )
         self.assertNotIn("What the numbers say", page)
 
@@ -1252,7 +1257,7 @@ class MoneyPlanTests(unittest.TestCase):
         )
         fields = self.plan_fields(
             categories=categories,
-            spendings=(("2026-10-01", "Category 1", "10", "Tea"),),
+            spendings=(("Category 1", "10", "Tea"),),
         )
         fields.extend([("category_rows", "13"), ("spending_rows", "1")])
         page = self.create_plan(fields)
@@ -1273,23 +1278,23 @@ class MoneyPlanTests(unittest.TestCase):
         )
         status, _, page = self.post_form(fields)
         self.assertEqual(status, 200)
-        self.assertIn('name="spending_date_100"', page)
-        self.assertNotIn('name="spending_date_101"', page)
+        self.assertIn('name="spending_category_100"', page)
+        self.assertNotIn('name="spending_category_101"', page)
         self.assertIn("100 spending rows is the maximum.", page)
         self.assertNotIn('aria-label="Add another spending row"', page)
 
         fields[-2] = ("spending_rows", "999")
         status, _, page = self.post_form(fields)
         self.assertEqual(status, 200)
-        self.assertIn('name="spending_date_100"', page)
-        self.assertNotIn('name="spending_date_101"', page)
+        self.assertIn('name="spending_category_100"', page)
+        self.assertNotIn('name="spending_category_101"', page)
 
     def test_maximum_rows_are_analysed_inline(self) -> None:
         categories = tuple(
             (f"Category {number}", "0", "flexible") for number in range(1, 101)
         )
         spendings = tuple(
-            ("2026-10-01", f"Category {number}", "10", f"Item {number}")
+            (f"Category {number}", "10", f"Item {number}")
             for number in range(1, 101)
         )
         fields = self.plan_fields(categories=categories, spendings=spendings)
@@ -1391,7 +1396,7 @@ class MoneyPlanTests(unittest.TestCase):
             ),
             (
                 self.plan_fields(
-                    spendings=(("2026-10-01", "Groceries", "100", ""),)
+                    spendings=(("Groceries", "100", ""),)
                 ),
                 "not one of your categories",
             ),
@@ -1475,7 +1480,7 @@ class MoneyPlanTests(unittest.TestCase):
                     ("<img src=x>", "500", "flexible"),
                 ),
                 spendings=(
-                    ("2026-10-01", "<script>cat()</script>", "100", "<script>entry()</script>"),
+                    ("<script>cat()</script>", "100", "<script>entry()</script>"),
                 ),
             )
         )
@@ -1489,8 +1494,8 @@ class MoneyPlanTests(unittest.TestCase):
             self.plan_fields(
                 categories=(("Food", "", "essential"), ("Fun", "", "flexible")),
                 spendings=(
-                    ("2026-10-01", "Food", "800", ""),
-                    ("2026-10-02", "Fun", "500", ""),
+                    ("Food", "800", ""),
+                    ("Fun", "500", ""),
                 ),
             )
         )
@@ -1524,12 +1529,28 @@ class MoneyPlanTests(unittest.TestCase):
         self.assertNotIn("receipt-saved", page)
         self.assertNotIn("/plan?receipt", page)
 
+    def test_receipt_is_stamped_with_the_device_clock(self) -> None:
+        recorded = datetime(2026, 11, 4, 15, 30, tzinfo=timezone.utc)
+        with mock.patch.object(web, "datetime") as clock:
+            clock.now.return_value.astimezone.return_value = recorded
+            page = self.create_plan()
+
+        stamp = '<time datetime="2026-11-04T15:30+00:00">04 Nov 2026, 15:30</time>'
+        self.assertEqual(page.count(stamp), 2)
+        self.assertIn("<dt>Recorded</dt>", page)
+        self.assertNotIn("<dt>Period</dt>", page)
+        self.assertIn("04 Nov 2026", page)
+        self.assertIn("15:30", page)
+        self.assertIn(
+            "You recorded 5 spending rows, averaging KES 2,500.00 per row.", page
+        )
+
     def test_displayed_category_shares_add_up_to_one_hundred(self) -> None:
         categories = tuple(
             (f"Equal {number}", "1000", "flexible") for number in range(1, 8)
         )
         spendings = tuple(
-            ("2026-10-01", f"Equal {number}", "100", "") for number in range(1, 8)
+            (f"Equal {number}", "100", "") for number in range(1, 8)
         )
         fields = self.plan_fields(categories=categories, spendings=spendings)
         fields.extend([("category_rows", "7"), ("spending_rows", "7")])

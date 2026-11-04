@@ -15,7 +15,7 @@ from __future__ import annotations
 import re
 import urllib.parse
 from dataclasses import dataclass
-from datetime import date
+from datetime import datetime
 
 from . import config
 
@@ -73,7 +73,6 @@ class CategoryDraft:
 
 @dataclass(frozen=True)
 class SpendingDraft:
-    spent_on: str = ""
     category: str = ""
     amount: str = ""
     note: str = ""
@@ -113,7 +112,6 @@ class CategoryPlan:
 
 @dataclass(frozen=True)
 class SpendingEntry:
-    spent_on: date
     category: str
     amount_cents: int
     note: str
@@ -160,11 +158,8 @@ class PlanAnalysis:
     essential_spent_cents: int
     flexible_spent_cents: int
     essential_share_pct: float
-    first_date: date
-    last_date: date
-    days_covered: int
-    active_days: int
-    average_daily_cents: float
+    recorded_at: datetime
+    average_entry_cents: float
     categories: tuple[CategoryResult, ...]
     ranked_categories: tuple[CategoryResult, ...]
     over_plan: tuple[CategoryResult, ...]
@@ -237,7 +232,6 @@ def read_draft(
         ),
         spendings=tuple(
             SpendingDraft(
-                spent_on=_first(form, f"spending_date_{number}"),
                 category=_first(form, f"spending_category_{number}"),
                 amount=_first(form, f"spending_amount_{number}"),
                 note=_first(form, f"spending_note_{number}"),
@@ -334,20 +328,10 @@ def validate_draft(draft: PlanDraft) -> tuple[MoneyPlan | None, list[str]]:
     for number, row in enumerate(draft.spendings, start=1):
         if not any(
             value.strip()
-            for value in (row.spent_on, row.category, row.amount, row.note)
+            for value in (row.category, row.amount, row.note)
         ):
             continue
         used_rows += 1
-
-        spent_on: date | None = None
-        raw_date = row.spent_on.strip()
-        if not raw_date:
-            errors.append(f"Spending row {number} needs a date.")
-        else:
-            try:
-                spent_on = date.fromisoformat(raw_date)
-            except ValueError:
-                errors.append(f"Spending row {number} needs a real date in YYYY-MM-DD form.")
 
         category = known_categories.get(_clean_spaces(row.category).casefold())
         if not _clean_spaces(row.category):
@@ -375,11 +359,11 @@ def validate_draft(draft: PlanDraft) -> tuple[MoneyPlan | None, list[str]]:
                 f"The note in spending row {number} contains characters that cannot be stored."
             )
 
-        if spent_on is not None and category is not None and amount_cents is not None:
-            spendings.append(SpendingEntry(spent_on, category, amount_cents, note))
+        if category is not None and amount_cents is not None:
+            spendings.append(SpendingEntry(category, amount_cents, note))
 
     if not used_rows:
-        errors.append("Add at least one spending entry with a date, category and amount.")
+        errors.append("Add at least one spending entry with a category and amount.")
     elif len(spendings) > MAX_SPENDINGS:
         errors.append(f"Use no more than {MAX_SPENDINGS} spending entries.")
 
@@ -404,8 +388,12 @@ def validate_draft(draft: PlanDraft) -> tuple[MoneyPlan | None, list[str]]:
     )
 
 
-def analyse(plan: MoneyPlan) -> PlanAnalysis:
-    """Calculate the comparison entirely from the validated plan values."""
+def analyse(plan: MoneyPlan, *, recorded_at: datetime) -> PlanAnalysis:
+    """Calculate the comparison from the plan and the submission time.
+
+    ``recorded_at`` must be timezone-aware local time; the caller reads it from
+    the device clock so the receipt can say when the analysis was run.
+    """
     planned_cents = sum(category.planned_cents for category in plan.categories)
     spent_cents = sum(entry.amount_cents for entry in plan.spendings)
 
@@ -462,12 +450,7 @@ def analyse(plan: MoneyPlan) -> PlanAnalysis:
     essential_spent = sum(item.spent_cents for item in categories if item.essential)
     flexible_spent = spent_cents - essential_spent
 
-    dates = sorted(entry.spent_on for entry in plan.spendings)
-    first_date = dates[0]
-    last_date = dates[-1]
-    days_covered = (last_date - first_date).days + 1
-    active_days = len(set(dates))
-
+    entry_count = len(plan.spendings)
     return PlanAnalysis(
         money_available_cents=plan.money_available_cents,
         planned_cents=planned_cents,
@@ -481,11 +464,8 @@ def analyse(plan: MoneyPlan) -> PlanAnalysis:
         essential_spent_cents=essential_spent,
         flexible_spent_cents=flexible_spent,
         essential_share_pct=(100.0 * essential_spent / spent_cents) if spent_cents else 0.0,
-        first_date=first_date,
-        last_date=last_date,
-        days_covered=days_covered,
-        active_days=active_days,
-        average_daily_cents=spent_cents / days_covered,
+        recorded_at=recorded_at,
+        average_entry_cents=(spent_cents / entry_count) if entry_count else 0.0,
         categories=tuple(categories),
         ranked_categories=tuple(ranked),
         over_plan=over_plan,

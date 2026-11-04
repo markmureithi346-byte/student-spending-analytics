@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import unittest
+from datetime import datetime, timezone
 
 from student_spending import personal
+
+RECORDED_AT = datetime(2026, 11, 4, 15, 30, tzinfo=timezone.utc)
 
 
 def plan_form(
@@ -18,12 +21,12 @@ def plan_form(
         ("Books", "", "flexible"),
         ("Savings", "1000", "essential"),
     ),
-    spendings: tuple[tuple[str, str, str, str], ...] = (
-        ("2026-10-01", "Rent", "6000", "October rent"),
-        ("2026-10-02", "Food", "3000", "Groceries"),
-        ("2026-10-02", "Food", "1500", "Lunch"),
-        ("2026-10-04", "Fun", "1800", "Concert"),
-        ("2026-10-04", "Books", "200", "Notebook"),
+    spendings: tuple[tuple[str, str, str], ...] = (
+        ("Rent", "6000", "October rent"),
+        ("Food", "3000", "Groceries"),
+        ("Food", "1500", "Lunch"),
+        ("Fun", "1800", "Concert"),
+        ("Books", "200", "Notebook"),
     ),
     synthetic: bool = True,
 ) -> dict[str, list[str]]:
@@ -37,8 +40,7 @@ def plan_form(
         form[f"category_name_{number}"] = [category_name]
         form[f"category_amount_{number}"] = [planned]
         form[f"category_essential_{number}"] = [kind]
-    for number, (spent_on, category, amount, entry_note) in enumerate(spendings, start=1):
-        form[f"spending_date_{number}"] = [spent_on]
+    for number, (category, amount, entry_note) in enumerate(spendings, start=1):
         form[f"spending_category_{number}"] = [category]
         form[f"spending_amount_{number}"] = [amount]
         form[f"spending_note_{number}"] = [entry_note]
@@ -84,8 +86,9 @@ class ValidationTests(unittest.TestCase):
         self.assertEqual(len(plan.categories), 5)
         self.assertEqual(plan.categories[3].planned_cents, 0)
         self.assertEqual(len(plan.spendings), 5)
-        self.assertEqual(plan.spendings[0].spent_on.isoformat(), "2026-10-01")
         self.assertEqual(plan.spendings[0].category, "Rent")
+        self.assertEqual(plan.spendings[0].amount_cents, 600_000)
+        self.assertEqual(plan.spendings[0].note, "October rent")
 
     def test_category_matching_ignores_case_and_extra_spaces(self) -> None:
         form = plan_form()
@@ -134,19 +137,27 @@ class ValidationTests(unittest.TestCase):
         )
         self.assertTrue(any("marked essential but has no name" in error for error in errors))
 
-    def test_spending_rows_need_a_known_category_date_and_amount(self) -> None:
+    def test_spending_rows_need_a_known_category_and_amount(self) -> None:
         _, errors = build_plan(
-            spendings=(("", "Groceries", "0", ""),)
+            spendings=(("Groceries", "0", ""),)
         )
         joined = " ".join(errors)
-        self.assertIn("needs a date", joined)
+        self.assertNotIn("needs a date", joined)
         self.assertIn("not one of your categories", joined)
         self.assertIn("must be more than zero", joined)
+
+    def test_a_date_field_alone_is_not_a_spending_entry(self) -> None:
+        form = plan_form(spendings=())
+        form["spending_date_1"] = ["2026-10-01"]
+        _, errors = personal.validate_draft(personal.read_draft(form))
+        self.assertIn(
+            "Add at least one spending entry with a category and amount.", errors
+        )
 
     def test_a_form_without_spending_is_rejected(self) -> None:
         _, errors = build_plan(spendings=())
         self.assertIn(
-            "Add at least one spending entry with a date, category and amount.", errors
+            "Add at least one spending entry with a category and amount.", errors
         )
 
     def test_field_lengths_are_bounded(self) -> None:
@@ -162,14 +173,14 @@ class ValidationTests(unittest.TestCase):
         _, errors = build_plan(note="x" * 301)
         self.assertTrue(any("budgeting note" in error for error in errors))
         _, errors = build_plan(
-            spendings=(("2026-10-01", "Food", "100", "x" * 121),)
+            spendings=(("Food", "100", "x" * 121),)
         )
         self.assertTrue(any("note in spending row" in error for error in errors))
 
     def test_blank_planned_amount_means_zero(self) -> None:
         plan, errors = build_plan(
             categories=(("Food", "", "essential"), ("Fun", "500", "flexible")),
-            spendings=(("2026-10-01", "Food", "100", ""),),
+            spendings=(("Food", "100", ""),),
         )
         self.assertEqual(errors, [])
         assert plan is not None
@@ -189,7 +200,7 @@ class AnalysisTests(unittest.TestCase):
         self.assertEqual(errors, [])
         assert plan is not None
         self.plan = plan
-        self.analysis = personal.analyse(plan)
+        self.analysis = personal.analyse(plan, recorded_at=RECORDED_AT)
 
     def test_totals_and_remaining_money(self) -> None:
         self.assertEqual(self.analysis.planned_cents, 1_350_000)
@@ -216,28 +227,27 @@ class AnalysisTests(unittest.TestCase):
         self.assertEqual(food.entry_count, 2)
         self.assertAlmostEqual(food.share_pct, 36.0)
 
-    def test_essential_flexible_and_daily_average(self) -> None:
+    def test_essential_flexible_and_average_entry(self) -> None:
         self.assertEqual(self.analysis.essential_planned_cents, 1_200_000)
         self.assertEqual(self.analysis.flexible_planned_cents, 150_000)
         self.assertEqual(self.analysis.essential_spent_cents, 1_050_000)
         self.assertEqual(self.analysis.flexible_spent_cents, 200_000)
         self.assertAlmostEqual(self.analysis.essential_share_pct, 84.0)
-        self.assertEqual(self.analysis.days_covered, 4)
-        self.assertEqual(self.analysis.active_days, 3)
-        self.assertAlmostEqual(self.analysis.average_daily_cents, 312_500.0)
+        self.assertEqual(self.analysis.recorded_at, RECORDED_AT)
+        self.assertAlmostEqual(self.analysis.average_entry_cents, 250_000.0)
 
     def test_zero_plan_and_overspending_are_represented(self) -> None:
         plan, errors = build_plan(
             money="1000",
             categories=(("Food", "", "essential"), ("Fun", "", "flexible")),
             spendings=(
-                ("2026-10-01", "Food", "800", ""),
-                ("2026-10-02", "Fun", "500", ""),
+                ("Food", "800", ""),
+                ("Fun", "500", ""),
             ),
         )
         self.assertEqual(errors, [])
         assert plan is not None
-        analysis = personal.analyse(plan)
+        analysis = personal.analyse(plan, recorded_at=RECORDED_AT)
         self.assertEqual(analysis.planned_cents, 0)
         self.assertEqual(analysis.remaining_cents, -30000)
         self.assertEqual(analysis.unallocated_cents, 100000)
