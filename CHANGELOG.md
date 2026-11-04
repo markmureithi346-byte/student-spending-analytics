@@ -4,6 +4,25 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.1] - 2026-11-04
+
+Removes the glitch when pressing **+** on the planner: the added row now appears
+immediately, with no entrance animation and no smooth-scroll glide.
+
+### Fixed
+
+- Dropped the `row-in` slide animation (and its reduced-motion entry) from newly added
+  category and spending rows; the row is rendered in place when the response arrives.
+- Overrode the theme's `scroll-behavior: smooth` on the served pages with
+  `html { scroll-behavior: auto; }`, so a form-submission landing on `#categories-end`
+  or `#spending-end` jumps straight to the list end instead of painting at the top and
+  then gliding for about a second. `scroll-margin-top` still keeps the new row and the
+  **+** bar in view.
+
+Measured live at 1280 px: a **+** press returns and shows the new row 155 px from the top
+in about 250 ms, with `animation-name: none` and `scroll-behavior: auto`. The suite is
+still 158 tests, and the rendered-page test now also pins the `scroll-behavior` override.
+
 ## [2.6.0] - 2026-11-04
 
 Moves the add-row **+** controls under the Categories and Spending lists and makes adding

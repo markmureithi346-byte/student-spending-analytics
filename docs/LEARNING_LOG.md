@@ -28,7 +28,7 @@ useful to whoever maintains this project next — including future me.
 | 18. Local demo accounts | done | `accounts.py`, `/signup`, `/login`, `/logout`, scrypt hashes, hashed session tokens, gated `/plan` and `/upload` with the sample dashboard still public, 157 tests, browser-checked at 1440 px, 1280 px and 390 px |
 | 19. Sign-in loading screen and button motion | done | authenticated `/welcome` with an animated tick, rings and progress bar, `meta refresh` hand-off after 2.6 s, CSS-only button hover/press/sheen across the platform, reduced-motion and phone fallbacks, 158 tests, browser-checked at 1440 px and 390 px with the redirect confirmed |
 | 20. Plan It brand on the loading screen | done | packaged `plan-it-logo.jpg` served from `/assets/`, `img-src 'self' data:`, wordmark and slogan on `/welcome`, 13-second linear countdown, animated logo tile and rings, 158 tests, browser-checked at 1440 px and 390 px with a measured 13.2-second redirect |
-| 21. Bottom add-row controls | done | **+** bars under both planner lists, `#categories-end`/`#spending-end` anchors, `row-in` animation on the new row, `scroll-margin-top` landing the new row and control in view, draft preserved through the no-save round-trip, 158 tests, 26 browser checks at 1280 px plus a reduced-motion pass |
+| 21. Bottom add-row controls | done | **+** bars under both planner lists, `#categories-end`/`#spending-end` anchors, `scroll-margin-top` landing the new row and control in view, `scroll-behavior: auto` on served pages so the landing is instant, no entrance animation, draft preserved through the no-save round-trip, 158 tests, 26 browser checks at 1280 px plus a 390 px phone pass and a reduced-motion pass, measured at about 250 ms per add |
 
 ## Decisions worth remembering
 
@@ -200,10 +200,12 @@ useful to whoever maintains this project next — including future me.
   more row and the same typed values. The `formaction` fragment names an end-of-list
   anchor, so the browser's own fragment scroll does the rest. No validation runs and
   nothing is stored on this path.
-- **The new row animates and the landing point is tuned with `scroll-margin-top`.**
-  The freshly added row carries `row-in` and an `autofocus`; `scroll-margin-top: 120px`
-  on the end anchor makes the smooth fragment scroll stop with the new row and the
-  **+** bar both visible, instead of aligning the anchor to the very top edge.
+- **The add-row landing must be instant, so the served pages opt out of smooth scroll.**
+  A motionless, immediate result won: the row is rendered with no entrance animation,
+  `html { scroll-behavior: auto; }` overrides the theme on every served page, and
+  `scroll-margin-top: 200px` places the new row and the **+** bar in view the moment the
+  response paints. Smooth scrolling stays on the static report, where it is only ever
+  used for in-page links.
 
 ## Bugs hit during development
 
@@ -454,6 +456,18 @@ useful to whoever maintains this project next — including future me.
     rendered `autofocus` attribute rather than active focus, and document the browser
     behaviour. *Lesson:* a timing artifact can look exactly like a missing feature; also,
     `autofocus` is a best-effort hint across navigation types.
+
+35. **The user called the add-row reload a glitch.** Pressing **+** repainted at the top
+    of the page, glided down for about a second under the theme's global
+    `scroll-behavior: smooth`, and then played a 0.5-second `row-in` slide on the new row:
+    three separate motions for what should be one instant result. *Fix:* delete the
+    `row-in` animation entirely and override the theme with
+    `html { scroll-behavior: auto; }` in the served-page CSS, keeping only
+    `scroll-margin-top` to control where the instant jump lands. The live measurement is
+    now about 250 ms from click to a visible row at 155 px, with `animation-name: none`.
+    *Lesson:* a reload is read as "the app jumped and then did something"; every extra
+    transition layered on top of it reads as malfunction, however smooth it looks on its
+    own. Verify perceived timing end to end, not each effect in isolation.
 
 ## Concepts this project exercises
 
