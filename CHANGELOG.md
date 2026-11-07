@@ -4,6 +4,53 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.8.0] - 2026-11-07
+
+Adds a weekly/monthly planning period, spending suggestions grounded in the analysis, and
+a local rule-based money coach. No JavaScript, no model and no network request is added.
+
+### Added
+
+- **Planning period.** The money form now has a Monthly/Weekly select, defaulting to
+  Monthly. `personal.PERIODS` and `PERIOD_NOUNS` define the labels and nouns, and an
+  unknown value is rejected with "Choose whether the money is for a month or a week."
+  The choice is stored on the plan and changes only the wording: the money label reads
+  "per month" or "per week", the analysis says "available for the month/week", the
+  banners, suggestions and coach use the same noun, and the receipt gains a **Period**
+  row. Figures are never converted between periods.
+- **How to spend it better.** `coach.suggest()` builds up to five suggestion cards from
+  the existing integer-cent analysis, most urgent first: spending over the money
+  available, over-plan categories (with the largest gap), unplanned spending, no plan or
+  unallocated money, flexible-heavy plans, missing or low essential spending, no savings
+  category, unspent money, an on-plan summary, and a fallback when there is not enough
+  data. A rule is skipped rather than guessed at, and the panel says the list is not
+  financial advice.
+- **Ask the money coach.** A new section under the method panel accepts one of five quick
+  questions or a typed question up to 200 characters and answers with cuts, savings, the
+  essential/flexible split, over-plan categories, the balance, the receipt time or the
+  period. Because the page has no JavaScript, the coach form carries hidden copies of the
+  submitted plan so the server can re-validate it and answer from the same analysis. The
+  form posts to `/plan#coach`, answers in the same page with no redirect and stores
+  nothing. Question text is escaped, and the reply is labelled "Local rules · no network".
+- `coach.py` with the `Suggestion` and `CoachReply` dataclasses, `suggest()`, `answer()`
+  and word-boundary topic matching, so short words do not match inside longer ones.
+
+### Changed
+
+- Version 2.8.0 in `__init__.py` and the `Server` header.
+- The receipt's money-available row reads "Money available (monthly)" or
+  "(weekly)", and the method panel lists the chosen period.
+- The planner README and learning log describe the period, suggestions and coach.
+
+Verified at 1280 px and 390 px in Playwright: the period select defaults to Monthly with
+both options, a Weekly submission changes the form, summary, receipt, method panel and
+suggestions to week wording while keeping the same totals, the four expected suggestion
+cards render from the sample plan (over plan KES 300.00, unplanned KES 200.00,
+unallocated KES 500.00, unspent KES 1,500.00), the coach form embeds 39 hidden snapshot
+fields, "How can I save more?" answers in the page with the savings figures and the echoed
+question, no console error or CSP violation appears, and the phone layout has no
+horizontal overflow. The suite is now 187 tests.
+
 ## [2.7.0] - 2026-11-04
 
 Removes the date field from every spending row. Entries are now stamped with the

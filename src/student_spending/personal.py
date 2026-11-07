@@ -54,6 +54,14 @@ BUDGET_METHODS: dict[str, str] = {
     "pay_yourself_first": "Pay yourself first",
     "custom": "My own method",
 }
+PERIODS: dict[str, str] = {
+    "monthly": "Monthly",
+    "weekly": "Weekly",
+}
+PERIOD_NOUNS: dict[str, str] = {
+    "monthly": "month",
+    "weekly": "week",
+}
 
 
 class PlanRequestError(ValueError):
@@ -82,6 +90,7 @@ class SpendingDraft:
 class PlanDraft:
     student_name: str = ""
     money_available: str = ""
+    period: str = "monthly"
     method: str = "none"
     method_note: str = ""
     categories: tuple[CategoryDraft, ...] = ()
@@ -125,6 +134,15 @@ class MoneyPlan:
     method_note: str
     categories: tuple[CategoryPlan, ...]
     spendings: tuple[SpendingEntry, ...]
+    period: str = "monthly"
+
+    @property
+    def period_label(self) -> str:
+        return PERIODS.get(self.period, PERIODS["monthly"])
+
+    @property
+    def period_noun(self) -> str:
+        return PERIOD_NOUNS.get(self.period, PERIOD_NOUNS["monthly"])
 
 
 
@@ -219,6 +237,7 @@ def read_draft(
     return PlanDraft(
         student_name=_first(form, "student_name"),
         money_available=_first(form, "money_available"),
+        period=_first(form, "period") or "monthly",
         method=_first(form, "method") or "none",
         method_note=_first(form, "method_note"),
         categories=tuple(
@@ -261,6 +280,12 @@ def validate_draft(draft: PlanDraft) -> tuple[MoneyPlan | None, list[str]]:
     )
     if error:
         errors.append(error)
+
+    if draft.period not in PERIODS:
+        errors.append("Choose whether the money is for a month or a week.")
+        period = "monthly"
+    else:
+        period = draft.period
 
     if draft.method not in BUDGET_METHODS:
         errors.append("Choose a budgeting method from the list.")
@@ -383,6 +408,7 @@ def validate_draft(draft: PlanDraft) -> tuple[MoneyPlan | None, list[str]]:
             method_note=method_note,
             categories=tuple(categories),
             spendings=tuple(spendings),
+            period=period,
         ),
         [],
     )

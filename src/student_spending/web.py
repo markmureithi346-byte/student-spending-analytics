@@ -48,6 +48,12 @@ from .components import (
     share_cell,
     table,
 )
+from .coach import (
+    MAX_QUESTION_LENGTH,
+    CoachReply,
+    answer as coach_answer,
+    suggest as coach_suggest,
+)
 from .personal import (
     BUDGET_METHODS,
     CATEGORY_ROWS,
@@ -58,6 +64,8 @@ from .personal import (
     MAX_NAME_LENGTH,
     MAX_PLAN_REQUEST_BYTES,
     MAX_SPENDINGS,
+    PERIODS,
+    PERIOD_NOUNS,
     SPENDING_ROWS,
     MoneyPlan,
     PlanAnalysis,
@@ -313,6 +321,37 @@ button:focus-visible { outline: 3px solid rgba(240,171,252,.55); outline-offset:
 .pill.neutral { background: rgba(124,58,237,.22); color: #e9d5ff; }
 .banner.note { background: rgba(124,58,237,.12);
   border: 1px solid rgba(196,181,253,.24); color: #ddd0f2; }
+.suggestion-list { display: grid; gap: 10px; margin: 10px 0 0; padding: 0;
+  list-style: none; }
+.suggestion { padding: 12px 14px; border-radius: 12px;
+  border: 1px solid rgba(196,181,253,.24); background: rgba(124,58,237,.1); }
+.suggestion.bad { border-color: rgba(253,164,175,.42);
+  background: rgba(190,24,93,.14); }
+.suggestion.warn { border-color: rgba(253,186,116,.4);
+  background: rgba(154,52,18,.16); }
+.suggestion.good { border-color: rgba(110,231,183,.36);
+  background: rgba(6,78,59,.2); }
+.suggestion h4 { margin: 0; color: #fff; font-size: 14px; }
+.suggestion p { margin: 5px 0 0; color: #ddd0f2; font-size: 13px;
+  line-height: 1.5; }
+.coach-form { display: grid; gap: 12px; margin-top: 14px; }
+.coach-question { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
+.coach-question .field { flex: 1 1 300px; }
+.coach-question .button { flex: 0 0 auto; }
+.coach-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.coach-chips .button { padding: 7px 12px; font-size: 12px; }
+.coach-answer { margin-top: 16px; padding: 16px 18px; border-radius: 14px;
+  border: 1px solid rgba(192,132,252,.32);
+  background: linear-gradient(150deg, rgba(124,58,237,.2), rgba(19,7,36,.5)); }
+.coach-asked { margin: 0 0 8px; color: #f0abfc; font-size: 13px; font-weight: 700; }
+.coach-asked span { color: #ddd0f2; font-weight: 500; }
+.coach-answer p { margin: 0 0 8px; color: #e4d8f7; font-size: 13.5px;
+  line-height: 1.55; }
+.coach-answer p:last-child { margin-bottom: 0; }
+.coach-origin { display: inline-block; margin-bottom: 8px; padding: 2px 8px;
+  border-radius: 999px; background: rgba(192,132,252,.18); color: #e9d5ff;
+  font-size: 10px; font-weight: 800; letter-spacing: .08em;
+  text-transform: uppercase; }
 .plan-split { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
   gap: 18px; align-items: start; }
 .receipt-wrap { position: relative; display: flex; justify-content: center;
@@ -2157,10 +2196,13 @@ def render_plan_page(
     spending_rows: int = SPENDING_ROWS,
     new_category_row: int | None = None,
     new_spending_row: int | None = None,
+    coach_question: str = "",
+    coach_reply: CoachReply | None = None,
     account: Account | None = None,
 ) -> str:
     draft = draft or PlanDraft()
     errors = errors or []
+    period_noun = PERIOD_NOUNS.get(draft.period, PERIOD_NOUNS["monthly"])
     category_rows = min(
         max(CATEGORY_ROWS, len(draft.categories), category_rows), MAX_CATEGORIES
     )
@@ -2176,12 +2218,21 @@ def render_plan_page(
         for number in range(1, spending_rows + 1)
     )
     analysis_html = (
-        _plan_analysis_sections(plan, analysis)
+        _plan_analysis_sections(
+            plan,
+            analysis,
+            draft,
+            category_rows=category_rows,
+            spending_rows=spending_rows,
+            coach_question=coach_question,
+            coach_reply=coach_reply,
+        )
         if plan is not None and analysis is not None
         else ""
     )
     analysis_link = (
         '<a href="#analysis">Analysis</a><a href="#analysis-receipt">Receipt</a>'
+        '<a href="#coach">Coach</a>'
         if analysis_html
         else ""
     )
@@ -2236,9 +2287,10 @@ def render_plan_page(
     <section class="panel" id="money" aria-labelledby="money-title">
       <p class="eyebrow"><span class="section-no">01</span> Money</p>
       <h2 id="money-title">What you have and how you plan</h2>
-      <p class="lead">Start with a display name and the money available for the period
-        you are planning. The budgeting method is a label for your approach; the
-        category amounts are what the comparison uses.</p>
+      <p class="lead">Start with a display name, choose whether you are planning a week
+        or a month, and enter the money available for that period. The budgeting method
+        is a label for your approach; the category amounts are what the comparison
+        uses.</p>
       {_plan_error_banner(errors)}
       <div class="plan-grid">
         <div class="field">
@@ -2248,11 +2300,13 @@ def render_plan_page(
             placeholder="A nickname is fine" autocomplete="off">
         </div>
         <div class="field">
-          <label for="money_available">Money available (KES)</label>
+          <label for="money_available">Money available per {period_noun} (KES)</label>
           <input id="money_available" name="money_available" type="text"
             inputmode="decimal" value="{escape_attr(draft.money_available)}"
             placeholder="e.g. 18,000">
         </div>
+        {_select_field("period", "Planning period", draft.period,
+                       list(PERIODS.items()))}
         {_select_field("method", "Budgeting method", draft.method,
                        list(BUDGET_METHODS.items()))}
         <div class="field field-full">
@@ -2263,8 +2317,9 @@ def render_plan_page(
         </div>
       </div>
       <p class="plan-section-note">Amounts are in KES. Commas and a decimal point are
-        fine: 18,000 or 18,000.50. This is the money you are planning with, not a bank
-        balance.</p>
+        fine: 18,000 or 18,000.50. The period changes the wording and the coach&rsquo;s
+        advice, not the numbers, so enter the money and the spending for the same
+        period.</p>
     </section>
 
     <section class="panel" id="categories" aria-labelledby="categories-title">
@@ -2352,7 +2407,8 @@ def render_plan_page(
 def _plan_summary(plan: object, analysis: object) -> str:
     return (
         f"{plan.student_name} has KES {money(analysis.money_available_cents / 100)} "
-        f"available, planned KES {money(analysis.planned_cents / 100)} across "
+        f"available for the {plan.period_noun}, planned "
+        f"KES {money(analysis.planned_cents / 100)} across "
         f"{integer(len(plan.categories))} categories, and recorded "
         f"{integer(len(plan.spendings))} spending entries totalling "
         f"KES {money(analysis.spent_cents / 100)}."
@@ -2375,7 +2431,7 @@ def _plan_cards(plan: object, analysis: object) -> str:
     )
     cards = [
         ("Money available", f"KES {money(analysis.money_available_cents / 100)}",
-         "the amount you entered"),
+         f"for the {plan.period_noun}"),
         ("Planned", f"KES {money(analysis.planned_cents / 100)}", planned_hint),
         ("Spent", f"KES {money(analysis.spent_cents / 100)}",
          f"{integer(len(plan.spendings))} entries · "
@@ -2393,21 +2449,24 @@ def _plan_cards(plan: object, analysis: object) -> str:
 
 
 def _plan_banners(plan: object, analysis: object) -> str:
+    noun = plan.period_noun
     banners: list[tuple[str, str, str]] = []
     if analysis.remaining_cents > 0:
         banners.append(
             ("good", "Money available",
-             f"KES {money(analysis.remaining_cents / 100)} of the money available is still unspent.")
+             f"KES {money(analysis.remaining_cents / 100)} of the money available for "
+             f"the {noun} is still unspent.")
         )
     elif analysis.remaining_cents == 0:
         banners.append(
             ("good", "Money available",
-             "Recorded spending uses exactly the money available.")
+             f"Recorded spending uses exactly the money available for the {noun}.")
         )
     else:
         banners.append(
             ("bad", "Money available",
-             f"Recorded spending is KES {money(-analysis.remaining_cents / 100)} more than the money available.")
+             f"Recorded spending is KES {money(-analysis.remaining_cents / 100)} more "
+             f"than the money available for the {noun}.")
         )
     if analysis.planned_cents == 0:
         banners.append(
@@ -2417,16 +2476,19 @@ def _plan_banners(plan: object, analysis: object) -> str:
     elif analysis.unallocated_cents < 0:
         banners.append(
             ("bad", "Plan",
-             f"The plan allocates KES {money(-analysis.unallocated_cents / 100)} more than the money available.")
+             f"The plan allocates KES {money(-analysis.unallocated_cents / 100)} more "
+             f"than the money available for the {noun}.")
         )
     elif analysis.unallocated_cents == 0:
         banners.append(
-            ("good", "Plan", "The plan allocates exactly the money available.")
+            ("good", "Plan",
+             f"The plan allocates exactly the money available for the {noun}.")
         )
     else:
         banners.append(
             ("note", "Plan",
-             f"The plan leaves KES {money(analysis.unallocated_cents / 100)} unallocated; it can be a buffer.")
+             f"The plan leaves KES {money(analysis.unallocated_cents / 100)} unallocated; "
+             "it can be a buffer.")
         )
     return "".join(
         f'<div class="banner {kind}" role="status"><strong>{escape_attr(label)}.</strong> '
@@ -2494,6 +2556,22 @@ def _plan_insights(plan: object, analysis: object) -> str:
         )
     list_html = "".join(f"<li>{escape_attr(item)}</li>" for item in items)
     return f'<ul class="insight-list">{list_html}</ul>'
+
+
+def _plan_suggestions(plan: object, analysis: object) -> str:
+    suggestions = coach_suggest(plan, analysis)
+    cards = "".join(
+        f'<li><div class="suggestion {escape_attr(item.tone)}">'
+        f"<h4>{escape_attr(item.title)}</h4>"
+        f"<p>{escape_attr(item.detail)}</p></div></li>"
+        for item in suggestions
+    )
+    return (
+        "<h3>How to spend it better</h3>"
+        f'<ul class="suggestion-list">{cards}</ul>'
+        '<p class="plan-section-note">Built from the figures above by fixed local '
+        "rules. It is not financial advice and nothing is sent to any service.</p>"
+    )
 
 
 def _plan_category_panel(plan: object, analysis: object) -> str:
@@ -2675,6 +2753,7 @@ def _plan_method_panel(plan: MoneyPlan) -> str:
     <h2 id="analysis-method-title">How you planned</h2>
     <p class="plan-meta">
       <span>Method: <strong>{escape_attr(method_label)}</strong></span>
+      <span>Period: <strong>{escape_attr(plan.period_label)}</strong></span>
     </p>
     {note}
     <p class="lead">The analysis does not score your budgeting method or recommend
@@ -2731,6 +2810,7 @@ def _plan_receipt_panel(plan: MoneyPlan, analysis: PlanAnalysis) -> str:
           <div><dt>Name</dt><dd>{escape_attr(plan.student_name)}</dd></div>
           <div><dt>Entries</dt><dd>{integer(len(plan.spendings))}</dd></div>
           <div><dt>Recorded</dt><dd>{_recorded_stamp(analysis.recorded_at)}</dd></div>
+          <div><dt>Period</dt><dd>{escape_attr(plan.period_label)}</dd></div>
           <div><dt>Method</dt><dd>{escape_attr(BUDGET_METHODS[plan.method])}</dd></div>
         </dl>
         <div class="receipt-rule" aria-hidden="true"></div>
@@ -2739,7 +2819,8 @@ def _plan_receipt_panel(plan: MoneyPlan, analysis: PlanAnalysis) -> str:
         <dl class="receipt-totals">
           <div><dt>Planned total</dt><dd>{money(analysis.planned_cents / 100)}</dd></div>
           <div><dt>Recorded spending</dt><dd>{money(analysis.spent_cents / 100)}</dd></div>
-          <div><dt>Money available</dt><dd>{money(analysis.money_available_cents / 100)}</dd></div>
+          <div><dt>Money available ({escape_attr(plan.period_label.lower())})</dt>
+            <dd>{money(analysis.money_available_cents / 100)}</dd></div>
           <div class="receipt-balance"><dt>{balance_label}</dt><dd>{balance_value}</dd></div>
         </dl>
         <p class="receipt-foot">Generated locally &middot; not a financial document<br>
@@ -2756,7 +2837,127 @@ def _plan_receipt_panel(plan: MoneyPlan, analysis: PlanAnalysis) -> str:
   </section>"""
 
 
-def _plan_analysis_sections(plan: MoneyPlan, analysis: PlanAnalysis) -> str:
+def _plan_snapshot_fields(
+    draft: PlanDraft, *, category_rows: int, spending_rows: int
+) -> str:
+    """Repeat the submitted plan inside the coach form.
+
+    The coach is a second form on the same page, so it cannot read the main
+    form's fields without JavaScript. Hidden copies of the raw draft let the
+    server re-validate the plan and answer from the same numbers.
+    """
+    fields: list[str] = []
+
+    def hidden(name: str, value: str) -> None:
+        fields.append(
+            f'<input type="hidden" name="{escape_attr(name)}" '
+            f'value="{escape_attr(value)}">'
+        )
+
+    hidden("student_name", draft.student_name)
+    hidden("money_available", draft.money_available)
+    hidden("period", draft.period)
+    hidden("method", draft.method)
+    hidden("method_note", draft.method_note)
+    hidden("category_rows", str(category_rows))
+    hidden("spending_rows", str(spending_rows))
+    hidden("synthetic", "yes")
+    for number in range(1, category_rows + 1):
+        row = draft.category(number)
+        hidden(f"category_name_{number}", row.name)
+        hidden(f"category_amount_{number}", row.planned)
+        hidden(
+            f"category_essential_{number}",
+            "essential" if row.essential else "flexible",
+        )
+    for number in range(1, spending_rows + 1):
+        row = draft.spending(number)
+        hidden(f"spending_category_{number}", row.category)
+        hidden(f"spending_amount_{number}", row.amount)
+        hidden(f"spending_note_{number}", row.note)
+    return "\n".join(fields)
+
+
+COACH_TOPICS = (
+    "Where can I cut spending?",
+    "How can I save more?",
+    "Is my plan balanced?",
+    "What is left?",
+    "What does the receipt time mean?",
+)
+
+
+def _plan_coach_panel(
+    plan: MoneyPlan,
+    analysis: PlanAnalysis,
+    draft: PlanDraft,
+    *,
+    category_rows: int,
+    spending_rows: int,
+    coach_question: str,
+    coach_reply: CoachReply | None,
+) -> str:
+    snapshot = _plan_snapshot_fields(
+        draft, category_rows=category_rows, spending_rows=spending_rows
+    )
+    chips = "".join(
+        '<button class="button ghost" type="submit" name="coach_topic" '
+        f'value="{escape_attr(topic)}">{escape_attr(topic)}</button>'
+        for topic in COACH_TOPICS
+    )
+    if coach_reply is not None:
+        paragraphs = "".join(
+            f"<p>{escape_attr(paragraph)}</p>"
+            for paragraph in coach_reply.paragraphs
+        )
+        reply_html = (
+            '<div class="coach-answer" role="status">'
+            '<span class="coach-origin">Local rules &middot; no network</span>'
+            f'<p class="coach-asked">You asked: '
+            f"<span>{escape_attr(coach_reply.question)}</span></p>"
+            f"{paragraphs}</div>"
+        )
+    else:
+        reply_html = ""
+    return f"""
+  <section class="panel" id="coach" aria-labelledby="coach-title">
+    <p class="eyebrow"><span class="section-no">10</span> Coach</p>
+    <h2 id="coach-title">Ask the money coach</h2>
+    <p class="lead">A local rule set, not an AI model. It reads only the plan you just
+      submitted, answers with the same figures, and never sends anything off this
+      machine.</p>
+    <form class="coach-form" method="post" action="/plan#coach"
+      accept-charset="utf-8">
+      {snapshot}
+      <input type="hidden" name="action" value="ask_coach">
+      <div class="coach-question">
+        <div class="field">
+          <label for="coach_question">Your question</label>
+          <input id="coach_question" name="coach_question" type="text"
+            maxlength="{MAX_QUESTION_LENGTH}"
+            value="{escape_attr(coach_question)}"
+            placeholder="e.g. Where can I cut spending?" autocomplete="off">
+        </div>
+        <button class="button primary" type="submit">Ask the coach</button>
+      </div>
+      <div class="coach-chips" aria-label="Quick questions">{chips}</div>
+    </form>
+    {reply_html}
+    <p class="plan-section-note">The coach matches a few fixed topics and fills in the
+      numbers from this analysis. It is not financial advice.</p>
+  </section>"""
+
+
+def _plan_analysis_sections(
+    plan: MoneyPlan,
+    analysis: PlanAnalysis,
+    draft: PlanDraft,
+    *,
+    category_rows: int,
+    spending_rows: int,
+    coach_question: str = "",
+    coach_reply: CoachReply | None = None,
+) -> str:
     summary = _plan_summary(plan, analysis)
     return f"""
   <section class="panel" id="analysis" aria-labelledby="analysis-title">
@@ -2767,10 +2968,12 @@ def _plan_analysis_sections(plan: MoneyPlan, analysis: PlanAnalysis) -> str:
     {_plan_banners(plan, analysis)}
     <h3>What stands out</h3>
     {_plan_insights(plan, analysis)}
+    {_plan_suggestions(plan, analysis)}
     <p class="plan-section-note">This analysis was generated in this page from the
       values above. It is not saved as a separate link or file.</p>
     <div class="plan-actions">
       <a class="button primary" href="#analysis-receipt">Open the receipt</a>
+      <a class="button ghost" href="#coach">Ask the coach</a>
       <a class="button ghost" href="#money">Change the numbers</a>
     </div>
   </section>
@@ -2778,6 +2981,15 @@ def _plan_analysis_sections(plan: MoneyPlan, analysis: PlanAnalysis) -> str:
   {_plan_category_panel(plan, analysis)}
   {_plan_spending_panel(plan, analysis)}
   {_plan_method_panel(plan)}
+  {_plan_coach_panel(
+      plan,
+      analysis,
+      draft,
+      category_rows=category_rows,
+      spending_rows=spending_rows,
+      coach_question=coach_question,
+      coach_reply=coach_reply,
+  )}
 """
 
 
@@ -2869,7 +3081,7 @@ class DashboardServer(ThreadingHTTPServer):
 
 class DashboardHandler(BaseHTTPRequestHandler):
     server: DashboardServer
-    server_version = "StudentSpendingDashboard/2.7.0"
+    server_version = "StudentSpendingDashboard/2.8.0"
     sys_version = ""
     timeout = 30
 
@@ -3353,6 +3565,42 @@ class DashboardHandler(BaseHTTPRequestHandler):
             form, "spending_rows", default=SPENDING_ROWS, maximum=MAX_SPENDINGS
         )
         action = _first(form, "action")
+        if action == "ask_coach":
+            draft = read_draft(
+                form, category_rows=category_rows, spending_rows=spending_rows
+            )
+            plan, errors = validate_draft(draft)
+            if plan is None:
+                self._send(
+                    HTTPStatus.UNPROCESSABLE_ENTITY,
+                    render_plan_page(
+                        draft=draft,
+                        errors=errors,
+                        category_rows=category_rows,
+                        spending_rows=spending_rows,
+                        account=account,
+                    ),
+                )
+                return
+            analysis = analyse(plan, recorded_at=datetime.now().astimezone())
+            typed = _first(form, "coach_question").strip()
+            # A quick-question button is the most recent action, so it wins over
+            # text left in the box by the previous answer.
+            question = _first(form, "coach_topic").strip() or typed
+            self._send(
+                HTTPStatus.OK,
+                render_plan_page(
+                    draft=draft,
+                    plan=plan,
+                    analysis=analysis,
+                    coach_question=typed,
+                    coach_reply=coach_answer(question, plan, analysis),
+                    category_rows=category_rows,
+                    spending_rows=spending_rows,
+                    account=account,
+                ),
+            )
+            return
         if action == "add_category":
             category_rows = min(category_rows + 1, MAX_CATEGORIES)
         elif action == "add_spending":

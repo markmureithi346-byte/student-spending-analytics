@@ -6,11 +6,13 @@ quality checks, an HTML report, and a filterable dashboard. The same server acce
 transactions CSV, derives the student list, runs the pipeline into an isolated workspace,
 and opens the analysis without touching the committed warehouse.
 
-It also includes a per-student money planner: a student enters the money they have, names
-their own categories, records planned and actual amounts, and gets an in-page analysis
-with planned-versus-actual totals, exact category shares, inline SVG charts and a
-printable receipt. The planner is local, needs no JavaScript and never asks for bank or
-card credentials.
+It also includes a per-student money planner: a student chooses a weekly or monthly
+period, enters the money they have, names their own categories, records planned and
+actual amounts, and gets an in-page analysis with planned-versus-actual totals, exact
+category shares, inline SVG charts, suggestions written from those figures and a
+printable receipt. A local, rule-based money coach answers follow-up questions in the same
+page. The planner is local, needs no JavaScript, sends nothing to a remote service and
+never asks for bank or card credentials.
 
 A local demo account unlocks the planner and the CSV upload. Signing up needs only a
 display name, a made-up email and a password; the sample dashboard and report stay open
@@ -42,6 +44,8 @@ For one student's own numbers, the money planner answers:
 - What share of spending went to each category, and to essential versus flexible needs?
 - What does the planned-versus-actual comparison look like as a graph?
 - What is the average spend per spending row?
+- Which gaps are worth closing first, and what could the unallocated or unspent money do?
+- What would the coach say about cuts, savings or the essential-versus-flexible split?
 
 ## Architecture
 
@@ -66,7 +70,8 @@ data/raw/*.csv
       ├── web.py          student-spending serve → dashboard + upload + money plan
       ├── accounts.py     local demo accounts, scrypt hashes and sessions (data/accounts.db)
       ├── platform.py     validate one upload, run it in an isolated workspace
-      └── personal.py     validate one student money plan and analyse it in the page
+      ├── personal.py     validate one student money plan and analyse it in the page
+      └── coach.py        fixed-rule suggestions and answers from the same analysis
 ```
 
 The report and the dashboard read the same SQL views; neither computes its own totals.
@@ -106,7 +111,7 @@ virtual environment.
 ```powershell
 python scripts\generate_synthetic_data.py     # writes data/raw/*.csv
 student-spending --full-refresh               # deletes the warehouse, then rebuilds it
-python run_tests.py                           # 158 tests
+python run_tests.py                           # 187 tests
 start reports\spending_report.html
 student-spending serve --open                 # local server; blocks until Ctrl+C
 ```
@@ -323,9 +328,11 @@ Every rejected or quarantined row is written to
 Open `http://127.0.0.1:8000/plan` (or choose **Plan my money** on the dashboard). The
 form is an ordinary HTML form with no JavaScript:
 
-1. **Money** — a display name (a nickname is fine), the money available for the period,
-   and an optional budgeting method and note. The method is a label for your approach;
-   the category amounts are what the comparison uses.
+1. **Money** — a display name (a nickname is fine), a **Monthly** or **Weekly** planning
+   period, the money available for that period, and an optional budgeting method and note.
+   The method is a label for your approach; the category amounts are what the comparison
+   uses. The period changes the labels, the receipt, the suggestions and the coach's
+   wording, not the numbers: enter the money and the spending for the same period.
 2. **Categories** — name your own categories, in your own words. Each row takes an
    optional planned amount and an **Essential** or **Flexible** flag. There is no fixed
    category list. Blank rows are ignored, and at least two named categories are required.
@@ -363,22 +370,48 @@ redirect, no saved plan, no result link and no separate file. The analysis shows
   **Under plan**, **Over plan**, **No plan**, **Not used**, **No activity**);
 - an essential-versus-flexible split, the spending entries behind the totals, and the
   budgeting method you chose;
-- a receipt summary directly below the analysis, with each spent-in category, its share,
-  the planned total, the money available and the balance left, ready to print or save as
-  PDF from the browser. **Open the receipt** jumps straight to it.
+- up to five **How to spend it better** suggestions, ranked most urgent first, such as
+  bringing over-plan categories back to plan, giving unallocated money a job, or moving
+  unspent money to savings;
+- a **receipt summary** directly below the analysis, with each spent-in category, its
+  share, the planned total, the money available and the balance left, ready to print or
+  save as PDF from the browser. **Open the receipt** jumps straight to it;
+- an **Ask the money coach** panel that answers a quick question button or a typed
+  question from the same figures.
 
 ![Money plan analysis below the form](docs/images/plan-result.png)
 
 ![Money plan receipt](docs/images/plan-receipt.png)
 
+### Suggestions and the local money coach
+
+![Local money coach answering a question](docs/images/plan-coach.png)
+
+**How to spend it better** is a short list of suggestions written by fixed rules in
+`coach.py`. Each sentence is filled in from the same integer-cent totals shown above, so
+it can quote the exact over-plan gap, the unplanned total, the unallocated money or the
+money still unspent. When a figure has no basis, the rule is skipped rather than guessed
+at; for example, a plan with no planned amounts gets "Set a category plan" instead of a
+verdict. The list stops at five items and states that it is not financial advice.
+
+The coach is a second form at the bottom of the analysis. It accepts one of five quick
+questions or a typed question up to 200 characters, and answers about cuts, savings, the
+essential and flexible split, over-plan categories, the balance left, the receipt time and
+the weekly or monthly period. Because the page has no JavaScript, the coach form carries
+hidden copies of the submitted plan; the server re-validates them and answers from the same
+analysis. The form posts back to `/plan#coach` and returns the answer in the page. It is a
+deterministic local rule set with no model, no network request and nothing written to
+disk; the panel says so.
+
 Everything is calculated from the submitted values: totals, shares, the average per
-spending row, and the over-plan and unplanned lists. Because `/plan` is served from your
-own machine on loopback, the server clock is the device clock; the submission time is
-stored on the analysis and printed on the receipt as **Recorded**, in the entries summary
-and in the receipt code line. The page does not
-advise on financial products or tell the student what they should spend. The graphs are
-generated locally as inline SVG; no chart service, remote font or third-party request is
-involved.
+spending row, and the over-plan and unplanned lists. A week plan and a month plan with the
+same numbers produce the same totals; only the wording changes. Because `/plan` is served
+from your own machine on loopback, the server clock is the device clock; the submission
+time is stored on the analysis and printed on the receipt as **Recorded**, in the entries
+summary and in the receipt code line. The page does not recommend financial products; the
+suggestions and the coach restate the submitted figures under fixed local rules. The
+graphs are generated locally as inline SVG; no chart service, remote font or third-party
+request is involved.
 
 Percentages name their denominator in the copy: shares in the category tables are of
 **recorded spending**, while the planned and spent cards are of the **money available**.
@@ -547,7 +580,7 @@ student-spending-analytics/
 ├── sql/                      schema.sql, example_queries.sql
 ├── src/student_spending/     pipeline, report, platform, accounts, dashboard and plan modules
 │   └── assets/               plan-it-logo.jpg served at /assets/plan-it-logo.jpg
-├── tests/                    158 unittest cases
+├── tests/                    187 unittest cases
 ├── warehouse/                generated SQLite database; uploads/ per analysis (git-ignored)
 ├── logs/                     pipeline.log (git-ignored)
 ├── pyproject.toml            package metadata, console script, build config
@@ -630,7 +663,7 @@ python run_tests.py
 python -m unittest discover -s tests -t . -v
 ```
 
-158 tests covering: extraction failures and malformed rows, derived and explicit student
+187 tests covering: extraction failures and malformed rows, derived and explicit student
 dimensions, every validation rule, normalisation, duplicate handling, reconciliation
 accounting, idempotent loading, foreign keys and CHECK constraints, analytics totals and
 shares, anomaly flagging, all quality checks, end-to-end pipeline runs including rerun
@@ -641,18 +674,24 @@ enforcement and CLI dispatch.
 
 The money planner adds tests for amount parsing (`2,500`, `KES 2500.50`, `1 000`, invalid
 and negative values), draft validation (names, duplicates, unknown spending categories,
-bounds, at least two categories and one spending row, synthetic confirmation), date-free
-spending entries, integer-cent analysis (planned/spent/left/unallocated, category statuses,
-essential and flexible shares, average per spending row), and the web flow: form rendering,
-adding category and spending rows under the list while preserving input without saving, the
-end-of-list fragment targets and the instant landing with a pop-in on the new row, both
-100-row limits, submission that renders the analysis, charts and receipt in the same page
-with no redirect or saved file, the receipt timestamp coming from the device clock,
-validation errors that preserve input and render no analysis, cross-site and
-wrong-content-type guards, injected-text escaping, analysis with zero planned amounts,
-largest-remainder rounding that adds up to 100.0%, and receipt figures that match the
-analysis. Component tests also cover the rounding helper directly, including the
-seven-equal-parts case that ordinary rounding turns into 100.1%.
+bounds, at least two categories and one spending row, synthetic confirmation), the
+monthly/weekly period (default, noun and label, rejection of any other value, and identical
+totals for both periods), date-free spending entries, integer-cent analysis
+(planned/spent/left/unallocated, category statuses, essential and flexible shares, average
+per spending row), and the web flow: form rendering, adding category and spending rows
+under the list while preserving input without saving, the end-of-list fragment targets and
+the instant landing with a pop-in on the new row, both 100-row limits, submission that
+renders the analysis, suggestions, charts and receipt in the same page with no redirect or
+saved file, the receipt timestamp coming from the device clock, validation errors that
+preserve input and render no analysis, cross-site and wrong-content-type guards,
+injected-text escaping, analysis with zero planned amounts, largest-remainder rounding
+that adds up to 100.0%, and receipt figures that match the analysis. The coach adds tests
+for suggestion priority and grounding (over-plan, unplanned, unallocated, unspent,
+overspent, no plan), the week noun, topic routing and word-boundary matching, truncation
+of long questions, escaping of the question, the hidden plan snapshot, answering without a
+redirect, and rejecting a broken plan with no answer. Component tests also cover the
+rounding helper directly, including the seven-equal-parts case that ordinary rounding
+turns into 100.1%.
 
 The upload platform adds tests for single-CSV multipart validation (missing, duplicate
 and unknown fields; wrong extensions; missing headers; header-only and binary files;

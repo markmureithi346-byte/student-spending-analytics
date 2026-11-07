@@ -1077,6 +1077,7 @@ class MoneyPlanTests(unittest.TestCase):
         *,
         name: str = "Amina",
         money: str = "14000",
+        period: str = "monthly",
         method: str = "envelope",
         note: str = "Weekly envelopes; rent first.",
         categories: tuple[tuple[str, str, str], ...] = (
@@ -1098,6 +1099,7 @@ class MoneyPlanTests(unittest.TestCase):
         fields = [
             ("student_name", name),
             ("money_available", money),
+            ("period", period),
             ("method", method),
             ("method_note", note),
         ]
@@ -1538,7 +1540,7 @@ class MoneyPlanTests(unittest.TestCase):
         stamp = '<time datetime="2026-11-04T15:30+00:00">04 Nov 2026, 15:30</time>'
         self.assertEqual(page.count(stamp), 2)
         self.assertIn("<dt>Recorded</dt>", page)
-        self.assertNotIn("<dt>Period</dt>", page)
+        self.assertIn("<dt>Period</dt><dd>Monthly</dd>", page)
         self.assertIn("04 Nov 2026", page)
         self.assertIn("15:30", page)
         self.assertIn(
@@ -1570,6 +1572,160 @@ class MoneyPlanTests(unittest.TestCase):
         self.assertIn("of the money available", page)
         self.assertIn("of the planned total", page)
         self.assertIn("adds up to exactly 100.0%", page)
+
+    def test_plan_page_offers_a_period_choice(self) -> None:
+        _, _, page = self.fetch("/plan")
+        self.assertIn('<select id="period" name="period">', page)
+        self.assertIn('<option value="monthly" selected>Monthly</option>', page)
+        self.assertIn('<option value="weekly">Weekly</option>', page)
+        self.assertIn("Money available per month (KES)", page)
+        self.assertIn("period changes the wording", page)
+        self.assertIn("coach&rsquo;s", page)
+        self.assertIn("advice, not the numbers", page)
+
+    def test_weekly_plan_changes_the_wording_not_the_numbers(self) -> None:
+        page = self.create_plan(self.plan_fields(period="weekly"))
+        self.assertIn("Money available per week (KES)", page)
+        self.assertIn('<option value="weekly" selected>Weekly</option>', page)
+        self.assertIn("available for the week", page)
+        self.assertIn("<dt>Period</dt><dd>Weekly</dd>", page)
+        self.assertIn("Money available (weekly)", page)
+        self.assertIn("<span>Period: <strong>Weekly</strong></span>", page)
+        self.assertIn("next week", page)
+        self.assertNotIn("next month", page)
+        self.assertIn("KES 14,000.00", page)
+        self.assertIn("KES 13,500.00", page)
+        self.assertIn("KES 12,500.00", page)
+
+    def test_unknown_period_is_rejected_without_analysis(self) -> None:
+        status, _, page = self.post_form(self.plan_fields(period="daily"))
+        self.assertEqual(status, 422)
+        self.assertIn(
+            "Choose whether the money is for a month or a week.", page
+        )
+        self.assertNotIn("What the numbers say", page)
+
+    def test_suggestions_are_rendered_from_the_analysis(self) -> None:
+        page = self.create_plan()
+        for text in (
+            "How to spend it better",
+            'class="suggestion-list"',
+            "Bring over-plan categories back to plan",
+            "1 category is over plan by KES 300.00 in total: Fun.",
+            "Some spending has no plan",
+            "KES 200.00 was spent in categories with no planned amount: Books.",
+            "Assign the unallocated money",
+            "KES 500.00 of the money available is not in any category plan.",
+            "Some money is still unspent",
+            "KES 1,500.00 of the money available has no recorded spending.",
+            "suggestion warn",
+            "suggestion note",
+            "suggestion good",
+            "not financial advice and nothing is sent to any service.",
+        ):
+            self.assertIn(text, page)
+        self.assertLess(
+            page.index('id="analysis"'), page.index('id="analysis-receipt"')
+        )
+        self.assertLess(
+            page.index("How to spend it better"), page.index('id="analysis-receipt"')
+        )
+
+    def test_coach_panel_embeds_the_plan_snapshot(self) -> None:
+        page = self.create_plan()
+        for text in (
+            'id="coach"',
+            'action="/plan#coach"',
+            '<input type="hidden" name="action" value="ask_coach">',
+            'id="coach_question" name="coach_question" type="text"',
+            'maxlength="200"',
+            "Ask the money coach",
+            "A local rule set, not an AI model",
+            'name="coach_topic"',
+            "Where can I cut spending?",
+            "What does the receipt time mean?",
+            '<input type="hidden" name="period" value="monthly">',
+            '<input type="hidden" name="category_name_1" value="Rent">',
+            '<input type="hidden" name="spending_note_1" value="October rent">',
+            '<input type="hidden" name="synthetic" value="yes">',
+            'href="#coach"',
+        ):
+            self.assertIn(text, page)
+        self.assertNotIn('class="coach-answer"', page)
+
+    def test_coach_answers_in_the_same_page_without_redirect(self) -> None:
+        fields = self.plan_fields() + [
+            ("action", "ask_coach"),
+            ("coach_question", "How can I save more?"),
+        ]
+        status, headers, page = self.post_form(fields)
+        self.assertEqual(status, 200)
+        self.assertNotIn("location", headers)
+        self.assertEqual(headers["cache-control"], "no-store")
+        self.assertIn("You asked: <span>How can I save more?</span>", page)
+        self.assertIn("Local rules &middot; no network", page)
+        self.assertIn("Savings is planned at KES 1,000.00", page)
+        self.assertIn("KES 500.00", page)
+        self.assertIn("KES 1,500.00 is also unspent", page)
+        self.assertIn('id="analysis"', page)
+        self.assertIn("What the numbers say", page)
+        self.assertIn("How to spend it better", page)
+
+    def test_coach_quick_question_button_answers(self) -> None:
+        fields = self.plan_fields() + [
+            ("action", "ask_coach"),
+            ("coach_topic", "What is left?"),
+        ]
+        status, headers, page = self.post_form(fields)
+        self.assertEqual(status, 200)
+        self.assertNotIn("location", headers)
+        self.assertIn("You asked: <span>What is left?</span>", page)
+        self.assertIn("KES 1,500.00 of the money available is unspent", page)
+
+    def test_coach_quick_question_wins_over_stale_text(self) -> None:
+        fields = self.plan_fields() + [
+            ("action", "ask_coach"),
+            ("coach_question", "How can I save more?"),
+            ("coach_topic", "What is left?"),
+        ]
+        status, _, page = self.post_form(fields)
+        self.assertEqual(status, 200)
+        self.assertIn("You asked: <span>What is left?</span>", page)
+        self.assertNotIn("You asked: <span>How can I save more?</span>", page)
+        self.assertIn('value="How can I save more?"', page)
+
+    def test_coach_question_is_escaped(self) -> None:
+        fields = self.plan_fields() + [
+            ("action", "ask_coach"),
+            ("coach_question", '<img src=x onerror="alert(1)">'),
+        ]
+        status, _, page = self.post_form(fields)
+        self.assertEqual(status, 200)
+        self.assertNotIn("<img src=x", page)
+        self.assertIn(
+            "&lt;img src=x onerror=&quot;alert(1)&quot;&gt;", page
+        )
+
+    def test_coach_rejects_a_broken_plan(self) -> None:
+        fields = self.plan_fields(money="") + [
+            ("action", "ask_coach"),
+            ("coach_question", "What is left?"),
+        ]
+        status, headers, page = self.post_form(fields)
+        self.assertEqual(status, 422)
+        self.assertNotIn("location", headers)
+        self.assertIn("Enter the money available.", page)
+        self.assertNotIn("Local rules &middot; no network", page)
+
+    def test_weekly_coach_answer_uses_the_week(self) -> None:
+        fields = self.plan_fields(period="weekly") + [
+            ("action", "ask_coach"),
+            ("coach_question", "Is this weekly or monthly?"),
+        ]
+        status, _, page = self.post_form(fields)
+        self.assertEqual(status, 200)
+        self.assertIn("set to a weekly period", page)
+        self.assertIn("treated as a week figure", page)
 
 
 class AuthTests(unittest.TestCase):

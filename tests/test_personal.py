@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from datetime import datetime, timezone
 
-from student_spending import personal
+from student_spending import coach, personal
 
 RECORDED_AT = datetime(2026, 11, 4, 15, 30, tzinfo=timezone.utc)
 
@@ -12,6 +12,7 @@ def plan_form(
     *,
     name: str = "Amina",
     money: str = "14000",
+    period: str = "monthly",
     method: str = "envelope",
     note: str = "Weekly envelopes; rent first.",
     categories: tuple[tuple[str, str, str], ...] = (
@@ -33,6 +34,7 @@ def plan_form(
     form: dict[str, list[str]] = {
         "student_name": [name],
         "money_available": [money],
+        "period": [period],
         "method": [method],
         "method_note": [note],
     }
@@ -257,6 +259,176 @@ class AnalysisTests(unittest.TestCase):
         )
         self.assertEqual(len(analysis.unplanned), 2)
         self.assertEqual(analysis.over_plan, ())
+
+
+class PeriodTests(unittest.TestCase):
+    def test_period_defaults_to_monthly_when_missing(self) -> None:
+        form = plan_form()
+        del form["period"]
+        plan, errors = personal.validate_draft(personal.read_draft(form))
+        self.assertEqual(errors, [])
+        assert plan is not None
+        self.assertEqual(plan.period, "monthly")
+        self.assertEqual(plan.period_label, "Monthly")
+        self.assertEqual(plan.period_noun, "month")
+
+    def test_weekly_period_is_kept_with_its_noun(self) -> None:
+        plan, errors = build_plan(period="weekly")
+        self.assertEqual(errors, [])
+        assert plan is not None
+        self.assertEqual(plan.period, "weekly")
+        self.assertEqual(plan.period_label, "Weekly")
+        self.assertEqual(plan.period_noun, "week")
+
+    def test_unknown_period_is_rejected(self) -> None:
+        plan, errors = build_plan(period="daily")
+        self.assertIsNone(plan)
+        self.assertIn(
+            "Choose whether the money is for a month or a week.", errors
+        )
+
+    def test_period_does_not_change_the_numbers(self) -> None:
+        monthly, _ = build_plan(period="monthly")
+        weekly, _ = build_plan(period="weekly")
+        assert monthly is not None and weekly is not None
+        monthly_analysis = personal.analyse(monthly, recorded_at=RECORDED_AT)
+        weekly_analysis = personal.analyse(weekly, recorded_at=RECORDED_AT)
+        self.assertEqual(monthly_analysis.planned_cents, weekly_analysis.planned_cents)
+        self.assertEqual(monthly_analysis.spent_cents, weekly_analysis.spent_cents)
+        self.assertEqual(monthly_analysis.remaining_cents, weekly_analysis.remaining_cents)
+
+
+class CoachTests(unittest.TestCase):
+    def setUp(self) -> None:
+        plan, errors = build_plan()
+        self.assertEqual(errors, [])
+        assert plan is not None
+        self.plan = plan
+        self.analysis = personal.analyse(plan, recorded_at=RECORDED_AT)
+
+    def test_suggestions_are_grounded_in_the_analysis(self) -> None:
+        items = coach.suggest(self.plan, self.analysis)
+        self.assertEqual(
+            [item.key for item in items],
+            ["over_plan", "unplanned", "unallocated", "unspent"],
+        )
+        over = items[0]
+        self.assertEqual(over.tone, "warn")
+        self.assertIn("1 category is over plan by KES 300.00 in total: Fun.", over.detail)
+        self.assertIn("Fun at KES 300.00", over.detail)
+        self.assertIn("KES 200.00", items[1].detail)
+        self.assertIn("Books", items[1].detail)
+        self.assertIn("KES 500.00", items[2].detail)
+        self.assertIn("KES 1,500.00", items[3].detail)
+
+    def test_weekly_suggestions_use_the_week_noun(self) -> None:
+        plan, errors = build_plan(period="weekly")
+        self.assertEqual(errors, [])
+        assert plan is not None
+        analysis = personal.analyse(plan, recorded_at=RECORDED_AT)
+        detail = " ".join(item.detail for item in coach.suggest(plan, analysis))
+        self.assertIn("next week", detail)
+        self.assertNotIn("next month", detail)
+
+    def test_overspent_plan_leads_with_the_gap(self) -> None:
+        plan, errors = build_plan(
+            money="1000",
+            categories=(("Food", "500", "essential"), ("Fun", "500", "flexible")),
+            spendings=(("Food", "800", ""), ("Fun", "600", "")),
+        )
+        self.assertEqual(errors, [])
+        assert plan is not None
+        analysis = personal.analyse(plan, recorded_at=RECORDED_AT)
+        items = coach.suggest(plan, analysis)
+        self.assertEqual(items[0].key, "overspent")
+        self.assertEqual(items[0].tone, "bad")
+        self.assertIn("KES 400.00 more", items[0].detail)
+        self.assertLessEqual(len(items), 5)
+
+    def test_plan_without_planned_amounts_is_not_judged(self) -> None:
+        plan, errors = build_plan(
+            categories=(("Food", "", "essential"), ("Fun", "", "flexible")),
+            spendings=(("Food", "800", ""),),
+        )
+        self.assertEqual(errors, [])
+        assert plan is not None
+        analysis = personal.analyse(plan, recorded_at=RECORDED_AT)
+        keys = [item.key for item in coach.suggest(plan, analysis)]
+        self.assertIn("no_plan", keys)
+        self.assertNotIn("on_track", keys)
+
+    def test_savings_reply_quotes_the_savings_category(self) -> None:
+        reply = coach.answer("How can I save more?", self.plan, self.analysis)
+        self.assertEqual(reply.topic, "savings")
+        joined = " ".join(reply.paragraphs)
+        self.assertIn("Savings is planned at KES 1,000.00", joined)
+        self.assertIn("KES 500.00", joined)
+        self.assertIn("KES 1,500.00 is also unspent", joined)
+
+    def test_cut_reply_names_the_biggest_gap(self) -> None:
+        reply = coach.answer("Where can I cut spending?", self.plan, self.analysis)
+        self.assertEqual(reply.topic, "cut")
+        self.assertIn("clearest cut is Fun", reply.paragraphs[0])
+        self.assertIn("KES 300.00", reply.paragraphs[0])
+        self.assertIn("Fun at KES 1,800.00", reply.paragraphs[1])
+
+    def test_balanced_question_uses_the_split(self) -> None:
+        reply = coach.answer("Is my plan balanced?", self.plan, self.analysis)
+        self.assertEqual(reply.topic, "split")
+        joined = " ".join(reply.paragraphs)
+        self.assertIn("Essentials: KES 12,000.00 planned", joined)
+        self.assertIn("Flexible: KES 1,500.00 planned", joined)
+
+    def test_over_and_balance_and_period_topics(self) -> None:
+        over = coach.answer("What is over plan?", self.plan, self.analysis)
+        self.assertEqual(over.topic, "over")
+        self.assertIn("Fun is KES 300.00 over its plan", over.paragraphs[0])
+
+        balance = coach.answer("What is left?", self.plan, self.analysis)
+        self.assertEqual(balance.topic, "balance")
+        self.assertIn("KES 1,500.00", balance.paragraphs[0])
+        self.assertIn("KES 500.00", balance.paragraphs[0])
+
+        period = coach.answer("Is this weekly or monthly?", self.plan, self.analysis)
+        self.assertEqual(period.topic, "period")
+        self.assertIn("monthly period", period.paragraphs[0])
+        self.assertIn("does not convert the numbers", period.paragraphs[1])
+
+    def test_receipt_reply_uses_the_recorded_time(self) -> None:
+        reply = coach.answer("What does the receipt time mean?", self.plan, self.analysis)
+        self.assertEqual(reply.topic, "receipt")
+        self.assertIn("04 Nov 2026, 15:30", reply.paragraphs[0])
+        self.assertIn("device's clock", reply.paragraphs[0])
+
+    def test_help_empty_and_fallback_replies(self) -> None:
+        hello = coach.answer("hello", self.plan, self.analysis)
+        self.assertEqual(hello.topic, "help")
+        self.assertIn("not an AI model", hello.paragraphs[0])
+
+        empty = coach.answer("   ", self.plan, self.analysis)
+        self.assertEqual(empty.topic, "start")
+        self.assertIn("KES 14,000.00 available this month", empty.paragraphs[1])
+
+        fallback = coach.answer("Tell me about volcanoes", self.plan, self.analysis)
+        self.assertEqual(fallback.topic, "overview")
+        self.assertIn("did not match", fallback.paragraphs[0])
+
+    def test_long_questions_are_truncated_but_answered(self) -> None:
+        question = "cut " + "x" * (coach.MAX_QUESTION_LENGTH * 2)
+        reply = coach.answer(question, self.plan, self.analysis)
+        self.assertEqual(len(reply.question), coach.MAX_QUESTION_LENGTH)
+        self.assertTrue(question.startswith(reply.question))
+        self.assertEqual(reply.topic, "cut")
+
+    def test_short_words_do_not_match_inside_other_words(self) -> None:
+        self.assertEqual(
+            coach.answer("This is a cover story", self.plan, self.analysis).topic,
+            "overview",
+        )
+        self.assertEqual(
+            coach.answer("The history of planning", self.plan, self.analysis).topic,
+            "overview",
+        )
 
 
 class FormParsingTests(unittest.TestCase):

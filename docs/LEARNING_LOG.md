@@ -30,6 +30,7 @@ useful to whoever maintains this project next — including future me.
 | 20. Plan It brand on the loading screen | done | packaged `plan-it-logo.jpg` served from `/assets/`, `img-src 'self' data:`, wordmark and slogan on `/welcome`, 13-second linear countdown, animated logo tile and rings, 158 tests, browser-checked at 1440 px and 390 px with a measured 13.2-second redirect |
 | 21. Bottom add-row controls | done | **+** bars under both planner lists, `#categories-end`/`#spending-end` anchors, `scroll-margin-top` landing the new row and control in view, `scroll-behavior: auto` on served pages so the landing is instant, a 0.26 s `row-pop` on only the new row, draft preserved through the no-save round-trip, 158 tests, 26 browser checks at 1280 px plus a 390 px phone pass and a reduced-motion pass, measured at about 250–650 ms per add |
 | 22. Device time instead of typed dates | done | date field and column removed from spending rows, submission time from `datetime.now().astimezone()` stored on the analysis, **Recorded** stamp in the entries summary, receipt meta and code line, daily average replaced by average per spending row, 160 tests, 10 browser checks at 1280 px, phone and reduced-motion passes unchanged |
+| 23. Weekly/monthly period, suggestions and local coach | done | `period` select stored on the plan and used only in wording, `coach.py` with up to five grounded suggestion cards and a deterministic question router, coach form carrying a hidden plan snapshot, answers rendered in the same page with no redirect, escaped question text, 187 tests, 29 browser checks at 1280 px and 390 px including a weekly submission |
 
 ## Decisions worth remembering
 
@@ -503,6 +504,25 @@ useful to whoever maintains this project next — including future me.
     point it is consumed; a UTC fixture is not automatically what the local-time path
     produces.
 
+38. **The coach answered "hello" to "history".** The first keyword router used plain
+    substring checks, so `hi` matched inside `this` and `history`, and `over` matched
+    inside `cover`. *Cause:* natural-language keywords are shorter than the words that
+    contain them. *Fix:* match single words with `\b` at the start of the word, keep
+    phrases as substrings, and require `\bhi\b` exactly for the greeting. Tests now ask
+    about "a cover story" and "the history of planning" and expect the overview answer.
+    *Lesson:* a rule-based responder needs a test for every short keyword it shares with
+    ordinary English.
+
+39. **The browser check saw five suggestions, but not the one it expected.** The script
+    typed the sample plan but left every category on the form's default **Flexible**
+    flag. That produced two extra, correct suggestions ("Flexible categories dominate the
+    plan" and "Mark your must-pay categories as essential"), and because the list is
+    capped at five, the unspent-money card was pushed out. The app was right; the fixture
+    was not the plan the test intended. *Fix:* select **Essential** explicitly for Rent,
+    Food and Savings in the browser script, and assert the four cards the fixture should
+    produce. *Lesson:* a UI verification must set every control the test's expected result
+    depends on, not just the ones that are convenient to type into.
+
 ## Concepts this project exercises
 
 Extraction boundaries; per-row error isolation; normalisation vs validation; policy for
@@ -529,7 +549,11 @@ on buttons; same-origin static assets with a narrow `img-src` allowance; package
 shipped media; linear progress pacing over a long staged wait; `formaction` fragments and
 `formnovalidate` draft round-trips for add-row controls; `scroll-margin-top` tuning for
 fragment landings under smooth scrolling; entrance keyframes for a server-rendered row;
-and the difference between "valid" and "unusual".
+and the difference between "valid" and "unusual"; deterministic rule-based answering
+with word-boundary keyword routing; repeating a plan into hidden fields so a second
+no-JavaScript form can re-validate it; suggestions assembled only from figures already on
+the page; a period treated as a label rather than a unit conversion; and a five-item
+priority cap that keeps advice focused instead of dumping every rule at once.
 
 ## Next exercises (for the learner, not the pipeline)
 
