@@ -15,8 +15,10 @@ page. The planner is local, needs no JavaScript, sends nothing to a remote servi
 never asks for bank or card credentials.
 
 A local demo account unlocks the planner and the CSV upload. Signing up needs only a
-display name, a made-up email and a password; the sample dashboard and report stay open
-without signing in.
+display name, a made-up email and a password, plus explicit consent to the draft privacy
+notice; the sample dashboard and report stay open without signing in. The account page
+can export or delete the account, reset a forgotten password with a one-time recovery
+code, and every uploaded analysis is visible only to the account that created it.
 
 Built as a learning project: the code is intentionally module-by-module and documented
 so the reasoning behind each stage is visible.
@@ -69,6 +71,7 @@ data/raw/*.csv
       │
       ├── web.py          student-spending serve → dashboard + upload + money plan
       ├── accounts.py     local demo accounts, scrypt hashes and sessions (data/accounts.db)
+      ├── legal.py        draft privacy notice, terms and shared disclaimers
       ├── platform.py     validate one upload, run it in an isolated workspace
       ├── personal.py     validate one student money plan and analyse it in the page
       └── coach.py        fixed-rule suggestions and answers from the same analysis
@@ -111,7 +114,7 @@ virtual environment.
 ```powershell
 python scripts\generate_synthetic_data.py     # writes data/raw/*.csv
 student-spending --full-refresh               # deletes the warehouse, then rebuilds it
-python run_tests.py                           # 187 tests
+python run_tests.py                           # 205 tests
 start reports\spending_report.html
 student-spending serve --open                 # local server; blocks until Ctrl+C
 ```
@@ -120,7 +123,8 @@ Open `http://127.0.0.1:8000/` for the sample dashboard,
 `http://127.0.0.1:8000/plan` to plan one student's money, or
 `http://127.0.0.1:8000/upload` to analyze a synthetic transactions CSV. The planner and
 upload ask you to sign in first; create a local demo account at
-`http://127.0.0.1:8000/signup` with any made-up email.
+`http://127.0.0.1:8000/signup` with any made-up email, then save the recovery code shown
+once on `/account`. The draft privacy notice and terms are at `/privacy` and `/terms`.
 
 Omit `--full-refresh` to rerun against the existing warehouse. Because loading is
 upsert-based and change-detected, a rerun inserts nothing and updates nothing.
@@ -137,6 +141,9 @@ student-spending [--transactions PATH] [--profiles PATH] [--budgets PATH]
                  [--db PATH] [--full-refresh] [--log-level LEVEL]
 
 student-spending serve [--db PATH] [--host ADDR] [--port N] [--open]
+                        [--secure-cookies]
+
+student-spending prune-uploads [--days N] [--apply]
 ```
 
 | Option | Default | Purpose |
@@ -160,13 +167,23 @@ the integration tests. The full run log is also written to `logs/pipeline.log`.
 | `--host` | `127.0.0.1` | bind address; loopback keeps the dashboard local |
 | `--port` | `8000` | port to bind; use `0` to pick a free port |
 | `--open` | off | open the dashboard in the default browser |
+| `--secure-cookies` | off | mark the session cookie `Secure` and send HSTS; use only behind HTTPS |
 
 `serve` hosts the sample dashboard at `/`, the CSV upload at `/upload` and the
 one-student money planner at `/plan`, plus the account pages `/signup`, `/login`,
-`/logout` and the post-sign-in `/welcome` screen. It refuses to start when the warehouse is missing, unreadable or empty, and
+`/reset`, `/logout` and `/account`, and the draft legal pages `/privacy` and `/terms`.
+It refuses to start when the warehouse is missing, unreadable or empty, and
 prints the rebuild command instead of serving a broken page. Stop it with Ctrl+C.
 Demo accounts are stored in `data/accounts.db`, created on first use and separate from
 the warehouse.
+
+### Upload retention
+
+`student-spending prune-uploads` lists the uploaded analysis workspaces older than
+`--days` (default 30) without deleting anything. Add `--apply` to delete them. It never
+touches the committed warehouse, the account database or the sample report, and it exits
+with code `2` when the retention window is below one day. The legal draft states that
+the operator runs this command on the schedule they publish.
 
 ## Local demo accounts
 
@@ -179,11 +196,21 @@ The dashboard shows **Demo mode · sample dashboard** with **Sign in** and
 **Create account** links; after signing in it shows your display name and a **Sign out**
 button on every page.
 
-- `/signup` creates an account from a display name, a made-up email and a password,
-  then signs you in and returns you to the page you originally asked for.
-- `/login` starts an eight-hour session and honours a same-site `next` path.
-- `/welcome` is a 13-second branded loading screen between signing in and the destination
-  page.
+- `/signup` creates an account from a display name, a made-up email and a password of
+  10–128 characters that includes a letter and a number. The privacy checkbox must be
+  ticked; the timestamp and `2026-11-07` policy version are stored with the account. A
+  16-character recovery code is shown **once** after sign-up.
+- `/login` starts an eight-hour session and honours a same-site `next` path. Signing in
+  goes straight to the destination, with no artificial delay.
+- `/reset` sets a new password from the email plus the recovery code. The code is
+  single-use, and a successful reset ends every existing session.
+- `/account` shows the display name, email, consent timestamp and whether a recovery code
+  is set. It can record consent for the current policy version, generate a new recovery
+  code, change the password, download a JSON export of the account record and its upload
+  metadata (never a hash), and delete the account after password re-entry. Deletion also
+  removes every hosted analysis.
+- `/privacy` and `/terms` carry the draft notice, the financial disclaimer, the ODPC
+  contact placeholder, the 72-hour breach statement and the M-Pesa trademark notice.
 - `/logout` is a POST form that deletes the session and clears the cookie.
 
 Accounts live in `data/accounts.db`, a small local SQLite file that is git-ignored.
@@ -191,18 +218,28 @@ Passwords are hashed with `hashlib.scrypt` (N=16384, r=8, p=1, a random 16-byte 
 and compared with `hmac.compare_digest`; the stored value has the form
 `scrypt$16384$8$1$<salt>$<digest>`, and the plaintext is never written. Session tokens
 are random 32-byte URL-safe strings, but the database keeps only their SHA-256 digest,
-so a copy of the file cannot be replayed as a login cookie. The cookie is `HttpOnly`
+so a copy of the file cannot be replayed as a login cookie. Recovery codes are stored the
+same way, as a SHA-256 digest, and cleared after one use. The cookie is `HttpOnly`
 and `SameSite=Strict`, no JavaScript reads it, and it expires after eight hours. Eight
-failed sign-ins from one address within five minutes return `429` with `Retry-After`
-instead of allowing unlimited guesses. A failed login says only that the email and
-password did not match, and an unknown email is checked against a dummy hash so it does
-not answer measurably faster than a wrong password.
+failed sign-ins, resets or account actions from one address within five minutes return
+`429` with `Retry-After` instead of allowing unlimited guesses. A failed login says only
+that the email and password did not match, and an unknown email is checked against a
+dummy hash so it does not answer measurably faster than a wrong password. Every
+state-changing form also requires a same-origin `Origin` or `Sec-Fetch-Site` header;
+without one the request is refused with `403`.
 
 Sign-up asks you to confirm that every value is made up. Do not enter a real student
-identity, a real email password or any bank, card or payment credentials: this is a
-teaching demo, not an identity service. It runs on loopback HTTP, so the cookie is not
-marked `Secure`; the server warns when it is bound beyond loopback because these demo
-accounts are not internet-grade.
+identity, a real email password or any bank, card, payment or national-ID credentials:
+this is a teaching demo, not an identity service. It runs on loopback HTTP, so the cookie
+is not marked `Secure` by default; `serve --secure-cookies` turns on `Secure` and HSTS
+when the operator terminates HTTPS in front of it. The server also warns when it is bound
+beyond loopback because these demo accounts are not internet-grade.
+
+Each uploaded analysis records the account that created it. The recent list, dashboard,
+report, CSV export and delete page all check ownership, so one account cannot open or
+remove another account's upload. The upload page has a **Delete** link that shows a
+confirmation page before removing the workspace; `prune-uploads --apply` provides the
+operator-side retention path.
 
 ![Create account](docs/images/signup.png)
 
@@ -213,35 +250,22 @@ form first.
 
 ![Create account at phone width](docs/images/signup-mobile.png)
 
-### The sign-in loading screen
+### Privacy and consent
 
-Signing in or creating an account lands on `/welcome` rather than jumping straight to the
-destination. The screen stages the **Plan It** brand — the logo in an animated tile, the
-wordmark and the slogan *Let's save money by planning* — above the signed-in name and the
-destination wording. Rings orbit the logo, the tile floats, and a linear progress bar fills
-for 13 seconds before the page moves on. The redirect is
-`<meta http-equiv="refresh">`, so it works under the strict no-JavaScript CSP; a
-**Continue now** button is there for anyone who does not want to wait. The page is gated
-like the tools, so an anonymous visit redirects to sign-in, and an unsafe `next` value
-falls back to `/plan`.
-
-![Plan It loading screen](docs/images/welcome.png)
-
-At phone width the card tightens, the buttons go full width, and the same 13-second
-countdown runs.
-
-![Plan It loading screen at phone width](docs/images/welcome-mobile.png)
-
-The logo is a 21 KB JPEG served from `/assets/plan-it-logo.jpg`, a public same-origin asset
-so the browser can cache it and the HTML stays small. It is the only image the CSP allows
-alongside `data:`. The rest of the dashboard keeps its existing page titles and labels;
-the Plan It identity is currently applied to this screen.
+Sign-up, consent, recovery, password changes, export and deletion are all local and
+SPA-free. The privacy notice is a **draft** and states so on every legal page; every
+organisation-specific value remains a `[BRACKETED PLACEHOLDER]` for a qualified Kenyan
+lawyer to replace. The account page is the consent surface: it records the policy version
+with a timestamp, points to the draft, and explains that withdrawing consent means
+deleting the account. There are no advertising, analytics or third-party tracking scripts,
+and the only cookie is the session cookie. See [docs/COMPLIANCE.md](docs/COMPLIANCE.md)
+for the operator checklist.
 
 All motion is CSS-only. Buttons across the platform — primary and ghost links, sign-out,
 add-row **+**, and the file picker — lift on hover, press down on click, and run a light
 sweep across their surface; the primary button also slides its gradient. Every one of
-those transitions is disabled under `prefers-reduced-motion: reduce`, where the logo, rings
-and progress bar render in their final state.
+those transitions is disabled under `prefers-reduced-motion: reduce`, where the brand
+logo renders in its final state.
 
 ## What a run produces (verified output of this repository)
 
@@ -574,17 +598,19 @@ student-spending-analytics/
 │   ├── quarantine/           generated rejection audit CSVs (git-ignored)
 │   ├── processed/            reserved for future exports (git-ignored)
 │   └── accounts.db           local demo accounts and sessions (git-ignored)
-├── docs/                     data dictionary, quality policy, learning log
+├── docs/                     data dictionary, quality policy, learning log, compliance checklist
 ├── reports/                  generated HTML report; uploads/ per analysis (git-ignored)
 ├── scripts/                  generate_synthetic_data.py, check_env.py
 ├── sql/                      schema.sql, example_queries.sql
-├── src/student_spending/     pipeline, report, platform, accounts, dashboard and plan modules
+├── src/student_spending/     pipeline, report, platform, accounts, legal, dashboard and plan modules
 │   └── assets/               plan-it-logo.jpg served at /assets/plan-it-logo.jpg
-├── tests/                    187 unittest cases
+├── tests/                    205 unittest cases
 ├── warehouse/                generated SQLite database; uploads/ per analysis (git-ignored)
 ├── logs/                     pipeline.log (git-ignored)
 ├── pyproject.toml            package metadata, console script, build config
 ├── CHANGELOG.md              release history
+├── THIRD_PARTY_LICENSES.md   third-party component and licence audit
+├── .env.example              no environment variables are required
 ├── LICENSE                   MIT
 ├── run_pipeline.py           CLI wrapper for running from a checkout
 └── run_tests.py              test wrapper
@@ -663,7 +689,7 @@ python run_tests.py
 python -m unittest discover -s tests -t . -v
 ```
 
-187 tests covering: extraction failures and malformed rows, derived and explicit student
+205 tests covering: extraction failures and malformed rows, derived and explicit student
 dimensions, every validation rule, normalisation, duplicate handling, reconciliation
 accounting, idempotent loading, foreign keys and CHECK constraints, analytics totals and
 shares, anomaly flagging, all quality checks, end-to-end pipeline runs including rerun
@@ -691,7 +717,9 @@ overspent, no plan), the week noun, topic routing and word-boundary matching, tr
 of long questions, escaping of the question, the hidden plan snapshot, answering without a
 redirect, and rejecting a broken plan with no answer. Component tests also cover the
 rounding helper directly, including the seven-equal-parts case that ordinary rounding
-turns into 100.1%.
+turns into 100.1%. Plan tests also check the 80%-of-plan flag and its table tag, the
+absence of the flag when nothing is near the limit, and the CSV download: its content
+type, attachment filename, category and spending rows, and disclaimer.
 
 The upload platform adds tests for single-CSV multipart validation (missing, duplicate
 and unknown fields; wrong extensions; missing headers; header-only and binary files;
@@ -699,23 +727,28 @@ size and part limits; the synthetic-data confirmation), derived student labels, 
 files, database and report per analysis, analysis-aware filter/pagination/export/report
 links, two-upload isolation, quality-failure alerts, cleanup after a 422, cross-origin
 and `Origin: null` rejection, traversal-resistant analysis ids, fixed sample routes and
-escaped analysis names.
+escaped analysis names. Ownership tests sign in a second account and prove that the first
+account's analysis is absent from its history, returns `404` on the dashboard and cannot
+be deleted from it; the owner can open and delete the workspace, which removes both the
+data directory and its warehouse file.
 
 The account layer adds its own tests for scrypt hash format, random salts, round-trip
-verification, malformed hashes, display-name and email normalisation, the password
-rules, case-insensitive duplicate refusal, session lookup and deletion, and expiry
-enforcement. Auth flow tests cover the sign-up and sign-in forms and their CSP, signed-in
-redirects, cookie attributes, the account bar, validation and duplicate-email errors,
-generic bad-credential responses with no cookie, `next` restricted to safe same-site
-paths, anonymous gating of `/plan` and `/upload` with the sample dashboard and report
-still public, logout clearing the session and cookie, cross-origin logout rejection,
-forged and expired sessions, and the per-address attempt limit returning `429` with
-`Retry-After`. The welcome screen has `test_welcome_screen_follows_signin_with_a_safe_refresh`:
-it checks the `303` to `/welcome?next=…`, the eight-hour cookie, the authenticated page
-returning `no-store`, the exact `13;url=/upload` refresh, the Plan It wordmark and slogan,
-the 13-second copy, the progressbar and continue link, a 200 `image/jpeg` for the logo
-route with the bytes matching the packaged file, and that anonymous visits redirect to
-sign-in while an unsafe `next` falls back to `/plan`.
+verification, malformed hashes, display-name and email normalisation, the ten-character
+password rules, case-insensitive duplicate refusal, session lookup and deletion, expiry
+enforcement, consent timestamps and policy version, recovery-code format, digest-only
+storage, single use and the end of all sessions after a reset, password changes with
+current-password re-entry, and account deletion. Auth flow tests cover the sign-up and
+sign-in forms and their CSP, signed-in redirects, cookie attributes, the account bar,
+validation, duplicate-email errors, generic bad-credential responses with no cookie,
+`next` restricted to safe same-site paths, anonymous gating of `/plan` and `/upload` with
+the sample dashboard and report still public, logout clearing the session and cookie,
+cross-origin logout rejection, forged and expired sessions, and the per-address attempt
+limit returning `429` with `Retry-After`. Further tests cover the direct sign-in landing
+without a delay, the one-time recovery code on `/account`, password change signing out
+every session, the password-gated JSON export without hashes, account deletion, the legal
+pages' required notices, the new security headers, the opt-in secure-cookie flag, and
+`prune-uploads` dispatching as a dry run, applying on request and rejecting a window
+below one day.
 
 ## Design decisions
 
@@ -740,9 +773,14 @@ sign-in while an unsafe `next` falls back to `/plan`.
 | Gated planner and upload, public sample dashboard | The showcase dataset should open without friction, but a personal workspace should feel owned; the split keeps the demo readable while showing what a signed-in product looks like |
 | scrypt hashes and hashed session tokens | Passwords must not be recoverable from the file, and a stolen cookie digest should not itself work as a login; both are one standard-library call away |
 | Generic login failure and a rate limiter | Telling an attacker whether the email or the password was wrong leaks which accounts exist; a slow per-address lockout keeps guessing impractical without a dependency |
-| A dedicated `/welcome` screen instead of a spinner on the form | The strict CSP blocks JavaScript, so a submit-time overlay could not run; a real page with a `meta refresh` gives an authenticated, skippable confirmation that still works with scripts off |
+| Recovery code instead of email delivery | The app has no mail service and no third-party dependency; a one-time code stored only as a digest gives a usable reset path without inventing an email provider |
+| Explicit consent with a policy version | Kenyan data-protection practice expects a recorded lawful basis; storing the timestamp and version makes withdrawal and re-consent auditable without a CRM |
+| Analyses scoped to their owner | A signed-in visitor should not read or delete another person's upload; the owner id lives in the analysis metadata and every route checks it |
+| Delete button plus operator pruning | Users can remove their own workspace immediately, while the operator gets a dry-run-first retention command for files nobody returns to |
+| Draft legal pages in the application | Keeping the privacy notice and terms next to the consent control makes them hard to lose; every organisation-specific value is visibly a placeholder awaiting Kenyan legal review |
+| Security headers and same-origin checks | The strict CSP already blocks scripts; adding frame, referrer, permissions and cross-origin policies plus an Origin check closes the remaining common browser-level gaps without a framework or token store |
+| Opt-in `Secure` cookies and HSTS | Loopback HTTP is the default and cannot use a secure cookie; an operator who terminates TLS can turn both on with one flag rather than editing code |
 | The Plan It logo is a cached same-origin asset, not a data URI | A brand image is reused and cacheable; serving it from `/assets/` keeps the HTML small and lets `img-src` stay narrow at `'self' data:` |
-| A 13-second wait with a linear bar and a skip link | The duration is a deliberate product choice for the demo; a linear fill matches the actual wait, and **Continue now** keeps it from being a trap |
 | Button motion via CSS only, with a reduced-motion branch | Feedback on click should never depend on a script or a network round-trip; the same rules collapse to no motion when the OS asks for it |
 | The add-row **+** sits under its list, not beside the heading | New rows appear at the bottom of the list, so keeping the control there means the user never loses the button off-screen; the counter shares the same bar |
 | Adding a row round-trips the draft instead of editing the DOM | With no JavaScript the server must own the row count; `formnovalidate` plus an end-of-list `formaction` fragment re-renders the form without validating or saving, and an instant `scroll-margin-top` landing keeps the reload feeling like a pop-in rather than a page change, with a 0.26 s `row-pop` keyframe on the new row as the only motion |
@@ -765,10 +803,12 @@ sign-in while an unsafe `next` falls back to `/plan`.
 `.github/workflows/ci.yml` runs on Ubuntu and Windows with Python 3.12 and 3.13:
 
 1. install the package in editable mode,
-2. run the full test suite,
-3. build the warehouse with `student-spending --full-refresh`,
-4. rerun without a refresh to prove the load is idempotent,
-5. upload the HTML report and audit CSV as a build artefact.
+2. check byte-compilation with `python -m compileall -q src`,
+3. verify the dependency graph with `python -m pip check`,
+4. run the full test suite,
+5. build the warehouse with `student-spending --full-refresh`,
+6. rerun without a refresh to prove the load is idempotent,
+7. upload the HTML report and audit CSV as a build artefact.
 
 The workflow uses only the committed synthetic data, so it needs no secrets or
 external services.
@@ -785,19 +825,21 @@ external services.
 - Quarantine records accumulate per run; there is no resolution UI or "cleared" state.
 - The dashboard is single-user and loopback-only. It has no saved views, roles or
   concurrent-writer coordination; it is a viewer for a batch-built warehouse.
-- Accounts are demo identities, not a user-administration system. There is no email
-  verification, password reset, profile editing, account deletion or roles, and uploaded
-  analyses are not owned by the account that created them — every signed-in visitor sees
-  the same recent uploads. A real multi-user deployment would need those controls.
-- Authentication is local only. Cookies are not `Secure` because the server speaks HTTP
-  on loopback, and the database and session files are not encrypted at rest. That is
-  acceptable only because the data is fake; real financial data would require TLS,
-  secure and rotated secrets, an audit trail, and encryption plus a deletion and
+- Accounts are demo identities, not a full user-administration system. There is no email
+  delivery or verification, no profile editing and no roles. Recovery uses a one-time code
+  shown at sign-up; losing it before saving means the demo account cannot be recovered.
+  Uploaded analyses are owned by the account that created them.
+- Authentication is local only. Cookies are not `Secure` by default because the server
+  speaks HTTP on loopback; `--secure-cookies` enables `Secure` and HSTS behind a TLS
+  proxy. The database and session files are not encrypted at rest. That is acceptable
+  only because the data is fake; real financial data would require TLS end to end,
+  secure and rotated secrets, an audit trail, and encryption plus a tested deletion and
   retention policy.
 - Uploads run synchronously inside the request, so a large CSV keeps that request open
-  until the pipeline finishes. There is no queue, progress stream, cancellation,
-  retention policy or delete button; analysis directories accumulate until removed by
-  hand. Loading is serialised by a process-wide lock, so two uploads do not write at once.
+  until the pipeline finishes. There is no queue, progress stream or cancellation.
+  Owners can delete one analysis from `/upload`; the operator can prune older workspaces
+  with `prune-uploads`, which is default-dry-run. Loading is serialised by a process-wide
+  lock, so two uploads do not write at once.
 - Uploads derive one student per `student_id`. Names, campus, study year and income are
   not collected, and uploads have no budget plan, so the report shows actual spending
   without variance. The CLI remains the way to supply those dimensions.
@@ -818,20 +860,20 @@ external services.
   receipt is a styled print view, not a downloadable file format.
 - The plan analysis describes the entered numbers (totals, shares, averages and plan
   status). It is not a forecast, credit assessment or financial advice.
-- The account is a gate, not a workspace: there is no per-account history of plans and
-  no way to retrieve an earlier analysis after leaving the page.
+- The account is an identity and privacy control, not a personal workspace: there is no
+  per-account history of plans and no way to retrieve an earlier analysis after leaving
+  the page.
 
 ## Future improvements
 
 - Incremental extraction (file watermark + `ingested_at`) and a scheduler.
-- Run uploads as a background job with progress, cancellation and a retention/delete
-  policy for analysis workspaces.
+- Run uploads as a background job with progress and cancellation.
 - Resolve quarantined rows through a reviewed fixes file with lineage back to the run.
 - dbt-style transformation tests or a data quality framework once the SQL grows.
 - Postgres or DuckDB when data outgrows a single SQLite file.
 - Add saved filter views and a small JSON endpoint over the same validated filters.
 - Let the planner import a student's own rows from the dashboard or a CSV, and add
-  monthly periods and recurring entries.
+  recurring entries.
 - Add an explicit receipt export once accounts are more than local demo identities and a
   retention story exists; until then the browser print/save flow keeps the planner
   honest about storing nothing.

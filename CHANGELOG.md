@@ -4,6 +4,90 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.0] - 2026-11-07
+
+Finishes, secures and cleans the personal tools: accounts gain recovery, consent,
+export and deletion; uploads gain owners and a delete control; the planner gains an
+80% alert and a CSV export; and the artificial post-sign-in delay is removed. The
+committed warehouse, sample dashboard and report are unchanged.
+
+### Added
+
+- **Account page (`/account`).** Shows the display name, email, creation time, consent
+  timestamp and policy version, and whether a recovery code is set. It can record
+  consent for the current policy version, generate a new recovery code, change the
+  password, export the account as JSON after password re-entry, and delete the account
+  plus every owned analysis after re-entry. The JSON never contains a password or
+  recovery-code hash.
+- **Password recovery (`/reset`).** A 16-character code in four groups is shown once at
+  sign-up (and on request from `/account`). It is stored only as a SHA-256 digest,
+  single-use, and a successful reset ends every session. There is no email delivery.
+- **Consent record.** Sign-up requires an unticked privacy checkbox; the timestamp and
+  `2026-11-07` policy version are stored with the account. Withdrawal means deleting the
+  account, which the page states.
+- **Draft legal pages (`/privacy`, `/terms`).** Both carry the exact draft sentence, every
+  organisation-specific value as a bracketed placeholder, the financial disclaimer, the
+  ODPC contact placeholder, the 72-hour breach statement and the M-Pesa trademark notice.
+  Dashboard, planner, upload and account footers link to them and repeat the disclaimer.
+- **Analysis ownership and deletion.** Every new upload records its `account_id` in the
+  metadata. Recent analyses, the dashboard, report, CSV export and delete route check the
+  owner, so another account cannot open or remove an upload. The upload page gains a
+  confirmation page and a **Delete** button for the owner.
+- **80% plan alert.** Categories that have spent between 80% and 100% of their planned
+  amount get a "Close to plan" banner and an "80%+ of plan" table tag.
+- **Plan CSV export.** **Download this plan as CSV** posts the same validated form and
+  returns a spreadsheet with the categories, spending entries, totals and disclaimer,
+  generated in the response and not stored.
+- **Retention command.** `student-spending prune-uploads [--days N] [--apply]` lists
+  uploaded workspaces older than the window and deletes them only with `--apply`; it never
+  touches the committed warehouse, the account database or the sample report.
+- **`serve --secure-cookies`.** Marks the session cookie `Secure` and sends HSTS for an
+  operator running behind HTTPS.
+- `.env.example` (no runtime environment variables), `THIRD_PARTY_LICENSES.md`, and
+  `docs/COMPLIANCE.md` with the data inventory, ODPC registration and contact
+  placeholders, 72-hour breach plan, DPIA screening, licensed-services statement and a
+  pre-launch checklist.
+
+### Changed
+
+- Signing in or signing up now redirects straight to the destination. The 13-second
+  `/welcome` loading screen and its images are removed.
+- Passwords must be **10–128** characters (previously 8–128) and still include a letter
+  and a number. Sign-up validation, the form hint and the tests use the new minimum.
+- Sessions are created on sign-up and login and the cookie is still `HttpOnly`,
+  `SameSite=Strict` and eight hours. `Secure` is opt-in.
+- State-changing requests now require a same-origin `Origin` or `Sec-Fetch-Site` header;
+  otherwise they return `403`. `Sec-Fetch-Site: cross-site` and malformed origins are
+  refused. Rate limits also cover `/reset` and account actions.
+- Additional response headers: `X-Frame-Options: DENY`, `Permissions-Policy`,
+  `Cross-Origin-Opener-Policy`, `Cross-Origin-Resource-Policy`, and HSTS under
+  `--secure-cookies`.
+- The dashboard, report and export remain public for the sample data; `?analysis=…`
+  always requires the owner. Login notices cover signed out, reset, changed and deleted.
+- The upload page shows owner-scoped history and notices after deletion or when an
+  analysis is missing.
+- Version 3.0.0 in `__init__.py` and the `Server` header; README, learning log, CI
+  (compile check and `pip check`) and release history are updated.
+
+### Removed
+
+- The `/welcome` page, its 13-second countdown, skip link, progress bar, rings and the
+  `docs/images/welcome.png` and `welcome-mobile.png` screenshots. The `/welcome` URL
+  remains as a compatibility redirect to the same safe destination, and the logo asset
+  remains.
+- Dead welcome-screen CSS and reduced-motion rules.
+
+### Security and privacy notes
+
+- Uploaded analyses created before this release have no owner and are not listed or
+  reachable through `?analysis=`; they stay on disk until the operator removes them.
+- There is still no CSRF token. `SameSite=Strict` plus the same-origin header check is the
+  documented mitigation, not a claim of complete CSRF protection.
+- The legal pages are drafts with bracketed placeholders and must be reviewed by a
+  qualified Kenyan lawyer before launch.
+- Verified locally: 205 tests pass, `python -m compileall -q src` and `python -m pip check`
+  succeed, and the live flows were exercised at desktop and 320 px widths.
+
 ## [2.8.0] - 2026-11-07
 
 Adds a weekly/monthly planning period, spending suggestions grounded in the analysis, and

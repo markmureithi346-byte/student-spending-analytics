@@ -182,6 +182,7 @@ class PlanAnalysis:
     ranked_categories: tuple[CategoryResult, ...]
     over_plan: tuple[CategoryResult, ...]
     unplanned: tuple[CategoryResult, ...]
+    near_plan: tuple[CategoryResult, ...] = ()
 
 
 def parse_amount(raw: str) -> int | None:
@@ -470,6 +471,13 @@ def analyse(plan: MoneyPlan, *, recorded_at: datetime) -> PlanAnalysis:
     unplanned = tuple(
         item for item in ranked if item.planned_cents == 0 and item.spent_cents > 0
     )
+    near_plan = tuple(
+        item
+        for item in ranked
+        if item.planned_cents > 0
+        and 0 < item.spent_cents < item.planned_cents
+        and item.spent_cents * 100 >= item.planned_cents * 80
+    )
 
     essential_planned = sum(item.planned_cents for item in categories if item.essential)
     flexible_planned = planned_cents - essential_planned
@@ -496,6 +504,7 @@ def analyse(plan: MoneyPlan, *, recorded_at: datetime) -> PlanAnalysis:
         ranked_categories=tuple(ranked),
         over_plan=over_plan,
         unplanned=unplanned,
+        near_plan=near_plan,
     )
 
 

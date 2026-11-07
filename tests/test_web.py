@@ -122,6 +122,7 @@ def signup_cookie(
                 "password": password,
                 "confirm": password,
                 "demo_ack": "yes",
+                "privacy_ack": "yes",
             }
         ).encode("utf-8")
         connection.request(
@@ -452,7 +453,24 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(headers["X-Content-Type-Options"], "nosniff")
         self.assertEqual(headers["Cache-Control"], "no-store")
         self.assertEqual(headers["Referrer-Policy"], "same-origin")
+        self.assertEqual(headers["X-Frame-Options"], "DENY")
+        self.assertEqual(headers["Cross-Origin-Opener-Policy"], "same-origin")
+        self.assertEqual(headers["Cross-Origin-Resource-Policy"], "same-origin")
+        self.assertIn("camera=()", headers["Permissions-Policy"])
+        self.assertIn("payment=()", headers["Permissions-Policy"])
+        self.assertNotIn("Strict-Transport-Security", headers)
         self.assertNotIn("Python", headers["Server"])
+
+    def test_secure_cookies_are_opt_in(self) -> None:
+        _, plain = web._session_cookie("token")
+        self.assertIn("HttpOnly", plain)
+        self.assertIn("SameSite=Strict", plain)
+        self.assertNotIn("Secure", plain)
+        _, secure = web._session_cookie("token", secure=True)
+        self.assertIn("Secure", secure)
+        _, cleared = web._cleared_cookie(secure=True)
+        self.assertIn("Max-Age=0", cleared)
+        self.assertIn("Secure", cleared)
 
     def test_readonly_connection_rejects_writes(self) -> None:
         connection = web.connect_readonly(self.db_path)
@@ -476,6 +494,38 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(kwargs["host"], "127.0.0.1")
         self.assertEqual(kwargs["port"], 0)
         self.assertFalse(kwargs["open_browser"])
+        self.assertFalse(kwargs["secure_cookies"])
+
+    def test_cli_prune_uploads_is_a_dry_run_by_default(self) -> None:
+        output = io.StringIO()
+        with mock.patch(
+            "student_spending.platform.prune_analyses",
+            return_value=["20260101T000000Z-abcdef"],
+        ) as prune_mock:
+            with contextlib.redirect_stdout(output):
+                code = cli.main(["prune-uploads", "--days", "14"])
+        self.assertEqual(code, 0)
+        prune_mock.assert_called_once_with(14, dry_run=True)
+        self.assertIn("Would delete 1 uploaded analysis", output.getvalue())
+        self.assertIn("Rerun with --apply", output.getvalue())
+
+        with mock.patch(
+            "student_spending.platform.prune_analyses", return_value=[]
+        ) as prune_mock:
+            with contextlib.redirect_stdout(io.StringIO()):
+                code = cli.main(["prune-uploads", "--days", "1", "--apply"])
+        self.assertEqual(code, 0)
+        prune_mock.assert_called_once_with(1, dry_run=False)
+
+        with mock.patch(
+            "student_spending.platform.prune_analyses",
+            side_effect=ValueError("older_than_days must be at least 1"),
+        ):
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                code = cli.main(["prune-uploads", "--days", "0"])
+        self.assertEqual(code, 2)
+        self.assertIn("at least 1", output.getvalue())
 
     def test_pipeline_invocations_are_unchanged(self) -> None:
         parser = cli.build_parser()
@@ -521,9 +571,13 @@ class UploadPlatformTests(unittest.TestCase):
         cls._config_patch.stop()
         cls._tmp.cleanup()
 
-    def fetch(self, path: str, *, method: str = "GET") -> tuple[int, dict, str]:
+    def fetch(
+        self, path: str, *, method: str = "GET", cookie: str | None = None
+    ) -> tuple[int, dict, str]:
         request = urllib.request.Request(
-            self.base + path, method=method, headers={"Cookie": self.cookie}
+            self.base + path,
+            method=method,
+            headers={"Cookie": cookie or self.cookie},
         )
         try:
             with urllib.request.urlopen(request, timeout=60) as response:
@@ -545,8 +599,12 @@ class UploadPlatformTests(unittest.TestCase):
     ) -> tuple[int, dict, str]:
         connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=60)
         try:
-            request_headers = {"Content-Type": content_type, "Cookie": self.cookie}
-            request_headers.update(headers or {})
+            request_headers = {
+                "Content-Type": content_type,
+                "Cookie": self.cookie,
+                "Origin": self.base,
+            }
+            request_headers.update(headers or ())
             connection.request("POST", path, body=body, headers=request_headers)
             response = connection.getresponse()
             payload = response.read()
@@ -912,6 +970,7 @@ class UploadPlatformTests(unittest.TestCase):
             sock.sendall(
                 b"POST /upload HTTP/1.1\r\nHost: 127.0.0.1\r\n"
                 + f"Cookie: {self.cookie}\r\n".encode()
+                + b"Origin: http://127.0.0.1\r\n"
                 + b"Content-Type: multipart/form-data; boundary=x\r\n"
                 b"Connection: close\r\n\r\n"
             )
@@ -989,6 +1048,55 @@ class UploadPlatformTests(unittest.TestCase):
         )
         self.assertEqual(self.baseline_state(), (31, "TEST-RUN"))
 
+    def test_analyses_are_private_to_their_owner(self) -> None:
+        analysis_id = self.upload_ok(title="Owned analysis")
+        other = signup_cookie(
+            self.base, email="other-owner@example.test", name="Other Owner"
+        )
+
+        status, _, page = self.fetch(f"/?analysis={analysis_id}", cookie=other)
+        self.assertEqual(status, 404)
+        self.assertIn("Analysis not found", page)
+
+        status, _, page = self.fetch("/upload", cookie=other)
+        self.assertEqual(status, 200)
+        self.assertNotIn("Owned analysis", page)
+        self.assertIn("No uploaded analyses yet", page)
+
+        status, _, page = self.fetch(
+            f"/delete-analysis?analysis={analysis_id}", cookie=other
+        )
+        self.assertEqual(status, 200)
+        self.assertIn("That analysis is no longer available.", page)
+        self.assertIn(analysis_id, self.analysis_dirs())
+
+        status, _, page = self.fetch(f"/?analysis={analysis_id}")
+        self.assertEqual(status, 200)
+        self.assertIn("Owned analysis", page)
+
+    def test_owner_can_delete_an_analysis(self) -> None:
+        analysis_id = self.upload_ok(title="Delete me")
+        status, _, page = self.fetch(f"/delete-analysis?analysis={analysis_id}")
+        self.assertEqual(status, 200)
+        self.assertIn("Delete analysis", page)
+        self.assertIn(analysis_id, page)
+
+        status, headers, _ = self.post_raw(
+            "application/x-www-form-urlencoded",
+            f"analysis_id={analysis_id}".encode(),
+            path="/delete-analysis",
+        )
+        self.assertEqual(status, 303)
+        self.assertEqual(headers["location"], "/upload?deleted=1")
+        self.assertNotIn(analysis_id, self.analysis_dirs())
+        self.assertFalse(
+            (Path(config.UPLOAD_WAREHOUSE_DIR) / f"{analysis_id}.db").exists()
+        )
+
+        status, _, page = self.fetch(f"/?analysis={analysis_id}")
+        self.assertEqual(status, 404)
+        self.assertIn("Analysis not found", page)
+
     def test_titles_are_escaped_in_dashboard_and_history(self) -> None:
         analysis_id = self.upload_ok(title="<script>alert('x')</script>")
         status, _, page = self.fetch(f"/?analysis={analysis_id}")
@@ -1059,8 +1167,12 @@ class MoneyPlanTests(unittest.TestCase):
         )
         connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
         try:
-            request_headers = {"Content-Type": content_type, "Cookie": self.cookie}
-            request_headers.update(headers or {})
+            request_headers = {
+                "Content-Type": content_type,
+                "Cookie": self.cookie,
+                "Origin": self.base,
+            }
+            request_headers.update(headers or ())
             connection.request("POST", path, body=body, headers=request_headers)
             response = connection.getresponse()
             payload = response.read()
@@ -1376,6 +1488,38 @@ class MoneyPlanTests(unittest.TestCase):
         self.assertIn('value="Rent"', page)
         self.assertIn('action="/plan#analysis"', page)
 
+    def test_categories_at_eighty_percent_are_flagged(self) -> None:
+        page = self.create_plan()
+        self.assertIn("Close to plan", page)
+        self.assertIn("used 80% or more of the planned amount", page)
+        self.assertIn('<span class="plan-tag near">80%+ of plan</span>', page)
+
+        wide = self.create_plan(
+            self.plan_fields(
+                categories=(
+                    ("Rent", "6000", "essential"),
+                    ("Food", "5000", "essential"),
+                ),
+                spendings=(("Rent", "6000", "October rent"),),
+            )
+        )
+        self.assertNotIn("Close to plan", wide)
+
+    def test_plan_can_be_downloaded_as_csv(self) -> None:
+        status, headers, body = self.post_form(
+            self.plan_fields(), path="/plan.csv"
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(headers["content-type"], "text/csv; charset=utf-8")
+        self.assertIn(
+            'attachment; filename="plan-it-monthly-', headers["content-disposition"]
+        )
+        self.assertIn("Plan It money plan export", body)
+        self.assertIn("Food,Essential,5000.00,4500.00,500.00", body)
+        self.assertIn("Concert", body)
+        self.assertIn(web.legal.DISCLAIMER, body)
+        self.assertNotIn("<html", body)
+
     def test_plan_query_parameters_render_a_fresh_form(self) -> None:
         for path in (
             "/plan?plan=../../etc/passwd",
@@ -1450,6 +1594,7 @@ class MoneyPlanTests(unittest.TestCase):
             sock.sendall(
                 b"POST /plan HTTP/1.1\r\nHost: 127.0.0.1\r\n"
                 + f"Cookie: {self.cookie}\r\n".encode()
+                + b"Origin: http://127.0.0.1\r\n"
                 + b"Content-Type: application/x-www-form-urlencoded\r\n"
                 b"Connection: close\r\n\r\n"
             )
@@ -1778,6 +1923,8 @@ class AuthTests(unittest.TestCase):
                 request_headers.setdefault(
                     "Content-Type", "application/x-www-form-urlencoded"
                 )
+            if method == "POST":
+                request_headers.setdefault("Origin", self.base)
             payload = (
                 urllib.parse.urlencode(fields).encode("utf-8")
                 if fields is not None
@@ -1801,6 +1948,7 @@ class AuthTests(unittest.TestCase):
             "password": "synthetic1",
             "confirm": "synthetic1",
             "demo_ack": "yes",
+            "privacy_ack": "yes",
         }
         fields.update(overrides)
         return fields
@@ -1865,7 +2013,7 @@ class AuthTests(unittest.TestCase):
     def test_signup_creates_hashed_account_and_session_cookie(self) -> None:
         status, headers, _ = self.request("POST", "/signup", fields=self.signup_fields())
         self.assertEqual(status, 303)
-        self.assertEqual(headers["location"], "/welcome?next=%2Fplan")
+        self.assertEqual(headers["location"], "/account?new=1")
         cookie = headers["set-cookie"]
         self.assertIn("ssa_session=", cookie)
         self.assertIn("HttpOnly", cookie)
@@ -1902,7 +2050,7 @@ class AuthTests(unittest.TestCase):
         self.assertEqual(status, 422)
         self.assertNotIn("set-cookie", headers)
         for text in (
-            "at least 8 characters",
+            "at least 10 characters",
             "two passwords do not match",
             "Confirm that this is a demo account",
             'value="New Student"',
@@ -1913,7 +2061,7 @@ class AuthTests(unittest.TestCase):
         status, _, page = self.request(
             "POST",
             "/signup",
-            fields=self.signup_fields(email="MEMBER@example.test", name="Clash"),
+            fields=self.signup_fields(email="MEMBER@example.test", display_name="Clash"),
         )
         self.assertEqual(status, 422)
         self.assertIn("already exists", page)
@@ -1927,6 +2075,20 @@ class AuthTests(unittest.TestCase):
         )
         self.assertEqual(status, 422)
         self.assertIn("does not look valid", page)
+
+        status, _, page = self.request(
+            "POST",
+            "/signup",
+            fields=self.signup_fields(
+                email="noconsent@example.test", privacy_ack=""
+            ),
+        )
+        self.assertEqual(status, 422)
+        self.assertIn("privacy notice and terms", page)
+        self.assertNotIn(
+            "noconsent@example.test",
+            {row["email"] for row in self.account_rows()},
+        )
 
     def test_signin_rejects_bad_credentials_without_a_cookie(self) -> None:
         status, headers, page = self.request(
@@ -1958,7 +2120,7 @@ class AuthTests(unittest.TestCase):
             "POST", "/login", fields=self.login_fields(next="/upload")
         )
         self.assertEqual(status, 303)
-        self.assertEqual(headers["location"], "/welcome?next=%2Fupload")
+        self.assertEqual(headers["location"], "/upload")
         self.assertIn("ssa_session=", headers["set-cookie"])
 
         for unsafe in ("//evil.example", "https://evil.example", "/missing"):
@@ -1967,62 +2129,247 @@ class AuthTests(unittest.TestCase):
                     "POST", "/login", fields=self.login_fields(next=unsafe)
                 )
                 self.assertEqual(status, 303)
-                self.assertEqual(headers["location"], "/welcome?next=%2Fplan")
+                self.assertEqual(headers["location"], "/plan")
 
-    def test_welcome_screen_follows_signin_with_a_safe_refresh(self) -> None:
+    def test_signin_lands_on_the_destination_without_a_delay(self) -> None:
         status, headers, _ = self.request(
             "POST", "/login", fields=self.login_fields(next="/upload")
         )
         self.assertEqual(status, 303)
+        self.assertEqual(headers["location"], "/upload")
         cookie = headers["set-cookie"].split(";", 1)[0]
 
-        status, headers, page = self.request(
+        status, headers, _ = self.request(
             "GET", "/welcome?next=%2Fupload", headers={"Cookie": cookie}
         )
-        self.assertEqual(status, 200)
-        self.assertEqual(headers["cache-control"], "no-store")
-        self.assertIn("img-src 'self' data:", headers["content-security-policy"])
-        self.assertIn('http-equiv="refresh"', page)
-        self.assertIn('content="13;url=/upload"', page)
-        self.assertIn("<title>Plan It · Welcome</title>", page)
-        self.assertIn("Plan It", page)
-        self.assertIn("save money by planning", page)
-        self.assertIn('src="/assets/plan-it-logo.jpg"', page)
-        self.assertIn("Welcome,", page)
-        self.assertIn("Member Student", page)
-        self.assertIn("your upload workspace", page)
-        self.assertIn("13 seconds", page)
-        self.assertIn('role="progressbar"', page)
-        self.assertIn('class="button primary" href="/upload"', page)
-        self.assertIn("@keyframes welcome-fill", page)
-        self.assertIn("animation: welcome-fill 12.7s", page)
-        self.assertNotIn("<script", page.lower())
+        self.assertEqual(status, 303)
+        self.assertEqual(headers["location"], "/upload")
 
-        with urllib.request.urlopen(
-            self.base + "/assets/plan-it-logo.jpg", timeout=30
-        ) as response:
-            logo = response.read()
-            self.assertEqual(response.status, 200)
-            self.assertEqual(response.headers["Content-Type"], "image/jpeg")
-            self.assertEqual(
-                response.headers["Cache-Control"], "public, max-age=86400"
-            )
-        self.assertTrue(logo.startswith(b"\xff\xd8\xff"))
-        self.assertEqual(len(logo), web.LOGO_PATH.stat().st_size)
-
+    def test_welcome_requires_signin_and_sanitises_next(self) -> None:
         status, headers, _ = self.request("GET", "/welcome?next=/upload")
         self.assertEqual(status, 303)
         self.assertEqual(headers["location"], "/login?next=%2Fupload")
 
+        status, headers, _ = self.request(
+            "GET", "/welcome?next=https://evil.example",
+            headers={"Cookie": self.cookie},
+        )
+        self.assertEqual(status, 303)
+        self.assertEqual(headers["location"], "/plan")
+
+    def test_account_page_shows_the_recovery_code_once(self) -> None:
+        status, headers, _ = self.request(
+            "POST",
+            "/signup",
+            fields=self.signup_fields(email="codes@example.test", display_name="Code Student"),
+        )
+        self.assertEqual(status, 303)
+        cookie = headers["set-cookie"].split(";", 1)[0]
+
         status, _, page = self.request(
-            "GET", "/welcome?next=https://evil.example", headers={"Cookie": cookie}
+            "GET", "/account?new=1", headers={"Cookie": cookie}
         )
         self.assertEqual(status, 200)
-        self.assertIn('content="13;url=/plan"', page)
-        self.assertNotIn("evil.example", page)
+        self.assertIn("Save this recovery code now", page)
+        self.assertIn("Signed in as", page)
+        self.assertIn("Code Student", page)
+        self.assertIn("Privacy consent", page)
+        self.assertIn("Draft - to be reviewed by a qualified Kenyan lawyer", page)
+        self.assertIn(web.legal.DISCLAIMER, page)
+        match = re.search(r'class="account-code">([A-Z0-9-]{19})</code>', page)
+        self.assertIsNotNone(match, page[:500])
+
+        status, _, second = self.request(
+            "GET", "/account", headers={"Cookie": cookie}
+        )
+        self.assertEqual(status, 200)
+        self.assertNotIn("Save this recovery code now", second)
+        self.assertNotIn(match.group(1), second)
+
+    def test_recovery_code_resets_password_and_is_single_use(self) -> None:
+        status, headers, _ = self.request(
+            "POST",
+            "/signup",
+            fields=self.signup_fields(email="recover@example.test", display_name="Recover Student"),
+        )
+        self.assertEqual(status, 303)
+        cookie = headers["set-cookie"].split(";", 1)[0]
+        _, _, page = self.request("GET", "/account?new=1", headers={"Cookie": cookie})
+        code = re.search(r'class="account-code">([A-Z0-9-]{19})</code>', page)
+        self.assertIsNotNone(code)
+        recovery = code.group(1)
+
+        status, headers, page = self.request(
+            "POST",
+            "/reset",
+            fields={
+                "email": "recover@example.test",
+                "recovery_code": recovery,
+                "password": "replacement1",
+                "confirm": "replacement1",
+            },
+        )
+        self.assertEqual(status, 303)
+        self.assertEqual(headers["location"], "/login?reset=1")
+        self.assertIsNone(
+            self.server.accounts.authenticate("recover@example.test", "synthetic1")
+        )
+        self.assertIsNotNone(
+            self.server.accounts.authenticate("recover@example.test", "replacement1")
+        )
+
+        status, _, page = self.request(
+            "POST",
+            "/reset",
+            fields={
+                "email": "recover@example.test",
+                "recovery_code": recovery,
+                "password": "another1234",
+                "confirm": "another1234",
+            },
+        )
+        self.assertEqual(status, 422)
+        self.assertIn("did not match, or the code was already used", page)
+
+        status, headers, _ = self.request(
+            "GET", "/plan", headers={"Cookie": cookie}
+        )
+        self.assertEqual(status, 303)
+        self.assertIn("/login?next=", headers["location"])
+
+    def test_password_change_signs_out_every_session(self) -> None:
+        status, headers, _ = self.request(
+            "POST",
+            "/signup",
+            fields=self.signup_fields(email="change@example.test", display_name="Change Student"),
+        )
+        self.assertEqual(status, 303)
+        cookie = headers["set-cookie"].split(";", 1)[0]
+
+        status, _, page = self.request(
+            "POST",
+            "/account/password",
+            fields={
+                "current_password": "wrongpass1",
+                "new_password": "replacement1",
+                "confirm": "replacement1",
+            },
+            headers={"Cookie": cookie},
+        )
+        self.assertEqual(status, 422)
+        self.assertIn("current password did not match", page)
+
+        status, headers, _ = self.request(
+            "POST",
+            "/account/password",
+            fields={
+                "current_password": "synthetic1",
+                "new_password": "replacement1",
+                "confirm": "replacement1",
+            },
+            headers={"Cookie": cookie},
+        )
+        self.assertEqual(status, 303)
+        self.assertEqual(headers["location"], "/login?changed=1")
+        self.assertIn("Max-Age=0", headers["set-cookie"])
+
+        status, headers, _ = self.request(
+            "GET", "/plan", headers={"Cookie": cookie}
+        )
+        self.assertEqual(status, 303)
+        self.assertIn("/login?next=", headers["location"])
+        self.assertIsNotNone(
+            self.server.accounts.authenticate("change@example.test", "replacement1")
+        )
+
+    def test_export_requires_password_and_omits_hashes(self) -> None:
+        status, headers, _ = self.request(
+            "POST",
+            "/signup",
+            fields=self.signup_fields(email="export@example.test", display_name="Export Student"),
+        )
+        self.assertEqual(status, 303)
+        cookie = headers["set-cookie"].split(";", 1)[0]
+
+        status, _, page = self.request(
+            "POST",
+            "/account/export",
+            fields={"password": "wrongpass1"},
+            headers={"Cookie": cookie},
+        )
+        self.assertEqual(status, 422)
+        self.assertIn("password did not match", page)
+
+        status, headers, page = self.request(
+            "POST",
+            "/account/export",
+            fields={"password": "synthetic1"},
+            headers={"Cookie": cookie},
+        )
+        self.assertEqual(status, 200)
+        self.assertIn("application/json", headers["content-type"])
+        self.assertIn("attachment;", headers["content-disposition"])
+        payload = json.loads(page)
+        self.assertEqual(payload["account"]["email"], "export@example.test")
+        self.assertEqual(payload["policy_version"], web.legal.POLICY_VERSION)
+        self.assertEqual(payload["disclaimer"], web.legal.DISCLAIMER)
+        self.assertNotIn("synthetic1", page)
+        self.assertNotIn("scrypt$", page)
+
+    def test_delete_account_removes_sessions_and_account(self) -> None:
+        status, headers, _ = self.request(
+            "POST",
+            "/signup",
+            fields=self.signup_fields(email="delete@example.test", display_name="Delete Student"),
+        )
+        self.assertEqual(status, 303)
+        cookie = headers["set-cookie"].split(";", 1)[0]
+
+        status, _, page = self.request(
+            "POST",
+            "/account/delete",
+            fields={"password": "wrongpass1", "confirm_delete": "yes"},
+            headers={"Cookie": cookie},
+        )
+        self.assertEqual(status, 422)
+        self.assertIn("password did not match", page)
+
+        status, headers, _ = self.request(
+            "POST",
+            "/account/delete",
+            fields={"password": "synthetic1", "confirm_delete": "yes"},
+            headers={"Cookie": cookie},
+        )
+        self.assertEqual(status, 303)
+        self.assertEqual(headers["location"], "/login?deleted=1")
+        self.assertIn("Max-Age=0", headers["set-cookie"])
+        self.assertIsNone(
+            self.server.accounts.authenticate("delete@example.test", "synthetic1")
+        )
+
+        status, headers, _ = self.request(
+            "GET", "/plan", headers={"Cookie": cookie}
+        )
+        self.assertEqual(status, 303)
+        self.assertIn("/login?next=", headers["location"])
+
+    def test_legal_pages_carry_the_required_notices(self) -> None:
+        status, _, page = self.request("GET", "/privacy")
+        self.assertEqual(status, 200)
+        self.assertIn(web.legal.DRAFT_NOTICE, page)
+        self.assertIn("Draft - to be reviewed by a qualified Kenyan lawyer before launch.", page)
+        self.assertIn("Office of the Data Protection Commissioner", page)
+        self.assertIn("72 hours", page)
+
+        status, _, page = self.request("GET", "/terms")
+        self.assertEqual(status, 200)
+        self.assertIn(web.legal.DISCLAIMER, page)
+        self.assertIn(web.legal.MPESA_NOTICE, page)
+        self.assertIn("not licensed by the Central Bank of", page)
+        self.assertIn("THIRD_PARTY_LICENSES.md", page)
 
     def test_anonymous_requests_to_personal_tools_are_gated(self) -> None:
-        for path in ("/plan", "/upload"):
+        for path in ("/plan", "/upload", "/account"):
             with self.subTest(path=path):
                 status, headers, _ = self.request("GET", path)
                 self.assertEqual(status, 303)

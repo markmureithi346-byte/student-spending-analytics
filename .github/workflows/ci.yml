@@ -35,6 +35,12 @@ jobs:
       - name: Show the installed version
         run: student-spending --version
 
+      - name: Check byte-compilation
+        run: python -m compileall -q src
+
+      - name: Verify the dependency graph
+        run: python -m pip check
+
       - name: Run the test suite
         run: python -m unittest discover -s tests -t . -v
 

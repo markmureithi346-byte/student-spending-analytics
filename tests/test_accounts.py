@@ -42,11 +42,17 @@ class ValidationTests(unittest.TestCase):
                     accounts.validate_email(bad)
 
     def test_password_needs_length_letter_and_number(self) -> None:
-        for bad in ("short1", "onlyletters", "12345678", "x" * 200):
+        for bad in ("short1", "ninechar1", "onlyletters", "1234567890", "x" * 200):
             with self.subTest(value=bad):
                 with self.assertRaises(accounts.AccountError):
                     accounts.validate_password(bad)
         self.assertEqual(accounts.validate_password("synthetic1"), "synthetic1")
+        self.assertEqual(len("synthetic1"), accounts.MIN_PASSWORD_LENGTH)
+
+    def test_recovery_codes_are_grouped_and_uppercase(self) -> None:
+        code = accounts.new_recovery_code()
+        self.assertRegex(code, r"^[A-Z0-9]{4}(-[A-Z0-9]{4}){3}$")
+        self.assertNotEqual(code, accounts.new_recovery_code())
 
 
 class AccountStoreTests(unittest.TestCase):
@@ -100,6 +106,83 @@ class AccountStoreTests(unittest.TestCase):
         finally:
             connection.close()
         self.assertIsNone(self.store.account_for_token(token))
+
+    def test_consent_records_the_policy_version(self) -> None:
+        created = self.store.create_account(
+            "Amina Demo", "amina@example.test", "synthetic1", consented=True
+        )
+        self.assertIsNotNone(created.consent_at)
+        self.assertEqual(created.policy_version, accounts.POLICY_VERSION)
+
+        other = self.store.create_account(
+            "Other Student", "other@example.test", "synthetic1"
+        )
+        self.assertIsNone(other.consent_at)
+        self.assertTrue(self.store.set_consent(other.account_id))
+        refreshed = self.store.authenticate("other@example.test", "synthetic1")
+        assert refreshed is not None
+        self.assertIsNotNone(refreshed.consent_at)
+        self.assertEqual(refreshed.policy_version, accounts.POLICY_VERSION)
+
+    def test_recovery_code_is_stored_as_a_digest_and_is_single_use(self) -> None:
+        account = self.store.create_account(
+            "Amina Demo", "amina@example.test", "synthetic1"
+        )
+        self.assertIsNone(self.store.generate_recovery_code(account.account_id, "wrongpass1"))
+        code = self.store.generate_recovery_code(account.account_id, "synthetic1")
+        assert code is not None
+
+        connection = sqlite3.connect(self.store.path)
+        try:
+            stored = connection.execute(
+                "SELECT recovery_hash FROM accounts WHERE account_id = ?",
+                (account.account_id,),
+            ).fetchone()[0]
+        finally:
+            connection.close()
+        self.assertNotIn(code.replace("-", ""), stored)
+        self.assertRegex(stored, r"^[0-9a-f]{64}$")
+
+        old_session = self.store.create_session(account.account_id)
+        self.assertFalse(
+            self.store.reset_password("amina@example.test", "0000-0000-0000-0000", "replacement1")
+        )
+        self.assertTrue(
+            self.store.reset_password("amina@example.test", code, "replacement1")
+        )
+        self.assertIsNone(self.store.authenticate("amina@example.test", "synthetic1"))
+        self.assertIsNotNone(self.store.authenticate("amina@example.test", "replacement1"))
+        self.assertIsNone(self.store.account_for_token(old_session))
+        self.assertFalse(
+            self.store.reset_password("amina@example.test", code, "synthetic1")
+        )
+
+    def test_change_password_requires_current_and_ends_sessions(self) -> None:
+        account = self.store.create_account(
+            "Amina Demo", "amina@example.test", "synthetic1"
+        )
+        token = self.store.create_session(account.account_id)
+        self.assertFalse(
+            self.store.change_password(account.account_id, "wrongpass1", "replacement1")
+        )
+        self.assertIsNotNone(self.store.account_for_token(token))
+
+        self.assertTrue(
+            self.store.change_password(account.account_id, "synthetic1", "replacement1")
+        )
+        self.assertIsNone(self.store.account_for_token(token))
+        self.assertIsNone(self.store.authenticate("amina@example.test", "synthetic1"))
+        self.assertIsNotNone(self.store.authenticate("amina@example.test", "replacement1"))
+
+    def test_delete_account_removes_sessions_and_the_record(self) -> None:
+        account = self.store.create_account(
+            "Amina Demo", "amina@example.test", "synthetic1"
+        )
+        token = self.store.create_session(account.account_id)
+        self.assertTrue(self.store.delete_account(account.account_id))
+        self.assertIsNone(self.store.account_for_token(token))
+        self.assertIsNone(self.store.authenticate("amina@example.test", "synthetic1"))
+        self.assertFalse(self.store.delete_account(account.account_id))
 
 
 if __name__ == "__main__":

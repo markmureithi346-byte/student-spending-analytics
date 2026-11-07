@@ -2,9 +2,9 @@
 
 Passwords are hashed with scrypt before they touch disk and sessions are
 opaque random tokens; the database stores only a SHA-256 digest of each token.
-This is a learning feature on a loopback server, not a production identity
-system: there is no email verification, password reset or remote provider, and
-the UI asks for made-up details only.
+Recovery codes are also stored only as digests and are shown once. This is a
+learning feature on a loopback server, not a production identity system: there
+is no email delivery, remote provider or email verification.
 """
 
 from __future__ import annotations
@@ -20,18 +20,22 @@ from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from pathlib import Path
 
+from .legal import POLICY_VERSION
+
 SESSION_COOKIE = "ssa_session"
 SESSION_SECONDS = 8 * 60 * 60
-MIN_PASSWORD_LENGTH = 8
+MIN_PASSWORD_LENGTH = 10
 MAX_PASSWORD_LENGTH = 128
 MAX_DISPLAY_NAME_LENGTH = 40
 MAX_EMAIL_LENGTH = 120
+RECOVERY_CODE_LENGTH = 16
 
 _SCRYPT_N = 2 ** 14
 _SCRYPT_R = 8
 _SCRYPT_P = 1
 _SCRYPT_DKLEN = 32
 _EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+_RECOVERY_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS accounts (
@@ -39,7 +43,10 @@ CREATE TABLE IF NOT EXISTS accounts (
     display_name TEXT NOT NULL,
     email        TEXT NOT NULL UNIQUE COLLATE NOCASE,
     password_hash TEXT NOT NULL,
-    created_at   TEXT NOT NULL
+    created_at   TEXT NOT NULL,
+    consent_at   TEXT,
+    policy_version TEXT,
+    recovery_hash TEXT
 );
 CREATE TABLE IF NOT EXISTS sessions (
     token_hash TEXT PRIMARY KEY,
@@ -53,6 +60,11 @@ CREATE INDEX IF NOT EXISTS sessions_expiry
     ON sessions(expires_at);
 """
 
+_ACCOUNT_COLUMNS = (
+    "account_id, display_name, email, created_at, consent_at, policy_version, "
+    "recovery_hash"
+)
+
 
 class AccountError(ValueError):
     """A sign-up or sign-in request that cannot be accepted."""
@@ -64,6 +76,9 @@ class Account:
     display_name: str
     email: str
     created_at: str
+    consent_at: str | None = None
+    policy_version: str | None = None
+    recovery_configured: bool = False
 
 
 def normalise_email(value: str) -> str:
@@ -164,6 +179,39 @@ def _token_digest(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
+def new_recovery_code() -> str:
+    """Return a 16-character code in four groups, e.g. ``7K2M-9QXA-...``."""
+    raw = "".join(
+        secrets.choice(_RECOVERY_ALPHABET) for _ in range(RECOVERY_CODE_LENGTH)
+    )
+    return "-".join(raw[index:index + 4] for index in range(0, len(raw), 4))
+
+
+def _recovery_digest(code: str) -> str:
+    normalised = re.sub(r"[^A-Z0-9]", "", code.upper())
+    return hashlib.sha256(
+        ("plan-it-recovery:" + normalised).encode("utf-8")
+    ).hexdigest()
+
+
+def _row_to_account(row: sqlite3.Row) -> Account:
+    return Account(
+        account_id=int(row["account_id"]),
+        display_name=str(row["display_name"]),
+        email=str(row["email"]),
+        created_at=str(row["created_at"]),
+        consent_at=(
+            str(row["consent_at"]) if row["consent_at"] is not None else None
+        ),
+        policy_version=(
+            str(row["policy_version"])
+            if row["policy_version"] is not None
+            else None
+        ),
+        recovery_configured=row["recovery_hash"] is not None,
+    )
+
+
 class AccountStore:
     """A tiny SQLite store; each call uses its own connection."""
 
@@ -182,24 +230,53 @@ class AccountStore:
         connection = self._connect()
         try:
             connection.executescript(_SCHEMA)
+            columns = {
+                str(row[1])
+                for row in connection.execute("PRAGMA table_info(accounts)")
+            }
+            additions = {
+                "consent_at": "consent_at TEXT",
+                "policy_version": "policy_version TEXT",
+                "recovery_hash": "recovery_hash TEXT",
+            }
+            for name, definition in additions.items():
+                if name not in columns:
+                    connection.execute(
+                        f"ALTER TABLE accounts ADD COLUMN {definition}"
+                    )
             connection.commit()
         finally:
             connection.close()
 
     def create_account(
-        self, display_name: str, email: str, password: str
+        self,
+        display_name: str,
+        email: str,
+        password: str,
+        *,
+        consented: bool = False,
     ) -> Account:
         name = validate_display_name(display_name)
         address = validate_email(email)
         validate_password(password)
         created_at = _stamp(_now())
+        consent_at = created_at if consented else None
+        policy_version = POLICY_VERSION if consented else None
         connection = self._connect()
         try:
             with connection:
                 cursor = connection.execute(
-                    "INSERT INTO accounts (display_name, email, password_hash, created_at) "
-                    "VALUES (?, ?, ?, ?)",
-                    (name, address, hash_password(password), created_at),
+                    "INSERT INTO accounts (display_name, email, password_hash, "
+                    "created_at, consent_at, policy_version) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    (
+                        name,
+                        address,
+                        hash_password(password),
+                        created_at,
+                        consent_at,
+                        policy_version,
+                    ),
                 )
             account_id = int(cursor.lastrowid)
         except sqlite3.IntegrityError:
@@ -213,6 +290,9 @@ class AccountStore:
             display_name=name,
             email=address,
             created_at=created_at,
+            consent_at=consent_at,
+            policy_version=policy_version,
+            recovery_configured=False,
         )
 
     def authenticate(self, email: str, password: str) -> Account | None:
@@ -220,8 +300,8 @@ class AccountStore:
         connection = self._connect()
         try:
             row = connection.execute(
-                "SELECT account_id, display_name, email, password_hash, created_at "
-                "FROM accounts WHERE email = ?",
+                f"SELECT {_ACCOUNT_COLUMNS}, password_hash FROM accounts "
+                "WHERE email = ?",
                 (address,),
             ).fetchone()
         finally:
@@ -231,12 +311,7 @@ class AccountStore:
             return None
         if not verify_password(password, str(row["password_hash"])):
             return None
-        return Account(
-            account_id=int(row["account_id"]),
-            display_name=str(row["display_name"]),
-            email=str(row["email"]),
-            created_at=str(row["created_at"]),
-        )
+        return _row_to_account(row)
 
     def create_session(self, account_id: int) -> str:
         token = secrets.token_urlsafe(32)
@@ -269,7 +344,7 @@ class AccountStore:
         connection = self._connect()
         try:
             row = connection.execute(
-                "SELECT a.account_id, a.display_name, a.email, a.created_at "
+                f"SELECT {', '.join('a.' + name for name in _ACCOUNT_COLUMNS.split(', '))} "
                 "FROM sessions AS s JOIN accounts AS a "
                 "ON a.account_id = s.account_id "
                 "WHERE s.token_hash = ? AND s.expires_at > ?",
@@ -279,12 +354,7 @@ class AccountStore:
             connection.close()
         if row is None:
             return None
-        return Account(
-            account_id=int(row["account_id"]),
-            display_name=str(row["display_name"]),
-            email=str(row["email"]),
-            created_at=str(row["created_at"]),
-        )
+        return _row_to_account(row)
 
     def delete_session(self, token: str) -> None:
         if not token:
@@ -298,3 +368,128 @@ class AccountStore:
                 )
         finally:
             connection.close()
+
+    def delete_sessions(self, account_id: int) -> None:
+        connection = self._connect()
+        try:
+            with connection:
+                connection.execute(
+                    "DELETE FROM sessions WHERE account_id = ?", (account_id,)
+                )
+        finally:
+            connection.close()
+
+    def verify_account_password(self, account_id: int, password: str) -> bool:
+        connection = self._connect()
+        try:
+            row = connection.execute(
+                "SELECT password_hash FROM accounts WHERE account_id = ?",
+                (account_id,),
+            ).fetchone()
+        finally:
+            connection.close()
+        if row is None:
+            verify_password(password, _dummy_hash())
+            return False
+        return verify_password(password, str(row["password_hash"]))
+
+    def set_consent(self, account_id: int) -> bool:
+        connection = self._connect()
+        try:
+            with connection:
+                cursor = connection.execute(
+                    "UPDATE accounts SET consent_at = ?, policy_version = ? "
+                    "WHERE account_id = ?",
+                    (_stamp(_now()), POLICY_VERSION, account_id),
+                )
+        finally:
+            connection.close()
+        return cursor.rowcount > 0
+
+    def generate_recovery_code(
+        self, account_id: int, password: str
+    ) -> str | None:
+        if not self.verify_account_password(account_id, password):
+            return None
+        code = new_recovery_code()
+        connection = self._connect()
+        try:
+            with connection:
+                connection.execute(
+                    "UPDATE accounts SET recovery_hash = ? WHERE account_id = ?",
+                    (_recovery_digest(code), account_id),
+                )
+        finally:
+            connection.close()
+        return code
+
+    def reset_password(
+        self, email: str, recovery_code: str, new_password: str
+    ) -> bool:
+        """Consume a recovery code and set a new password.
+
+        The code is single-use: a successful reset clears it and ends every
+        existing session. Unknown emails and bad codes take the same generic
+        path and return the same result.
+        """
+        validate_password(new_password)
+        address = normalise_email(email)
+        digest = _recovery_digest(recovery_code)
+        connection = self._connect()
+        try:
+            row = connection.execute(
+                "SELECT account_id, recovery_hash FROM accounts WHERE email = ?",
+                (address,),
+            ).fetchone()
+            if row is None or not row["recovery_hash"]:
+                hmac.compare_digest(digest, _recovery_digest("0000-0000-0000-0000"))
+                return False
+            if not hmac.compare_digest(digest, str(row["recovery_hash"])):
+                return False
+            account_id = int(row["account_id"])
+            with connection:
+                connection.execute(
+                    "UPDATE accounts SET password_hash = ?, recovery_hash = NULL "
+                    "WHERE account_id = ?",
+                    (hash_password(new_password), account_id),
+                )
+                connection.execute(
+                    "DELETE FROM sessions WHERE account_id = ?", (account_id,)
+                )
+        finally:
+            connection.close()
+        return True
+
+    def change_password(
+        self, account_id: int, current_password: str, new_password: str
+    ) -> bool:
+        validate_password(new_password)
+        if not self.verify_account_password(account_id, current_password):
+            return False
+        connection = self._connect()
+        try:
+            with connection:
+                connection.execute(
+                    "UPDATE accounts SET password_hash = ? WHERE account_id = ?",
+                    (hash_password(new_password), account_id),
+                )
+                connection.execute(
+                    "DELETE FROM sessions WHERE account_id = ?", (account_id,)
+                )
+        finally:
+            connection.close()
+        return True
+
+    def delete_account(self, account_id: int) -> bool:
+        connection = self._connect()
+        try:
+            with connection:
+                connection.execute(
+                    "DELETE FROM sessions WHERE account_id = ?", (account_id,)
+                )
+                cursor = connection.execute(
+                    "DELETE FROM accounts WHERE account_id = ?", (account_id,)
+                )
+        finally:
+            connection.close()
+        return cursor.rowcount > 0

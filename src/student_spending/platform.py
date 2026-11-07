@@ -20,7 +20,7 @@ import sqlite3
 import threading
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from email import policy
 from email.parser import BytesParser
 from pathlib import Path
@@ -83,6 +83,7 @@ class AnalysisWorkspace:
     db_path: Path
     report_path: Path
     inputs: dict[str, dict[str, object]]
+    account_id: int | None = None
 
 
 def new_analysis_id() -> str:
@@ -176,8 +177,15 @@ def parse_upload(content_type: str, body: bytes) -> UploadBundle:
     return UploadBundle(title=title, files=files)
 
 
-def create_analysis(bundle: UploadBundle) -> AnalysisWorkspace:
-    """Persist the files, run the pipeline and return the finished workspace."""
+def create_analysis(
+    bundle: UploadBundle, *, account_id: int | None = None
+) -> AnalysisWorkspace:
+    """Persist the files, run the pipeline and return the finished workspace.
+
+    ``account_id`` records which local account owns the analysis. Analyses
+    created before ownership was recorded have no owner and are not exposed by
+    the web application.
+    """
     analysis_id = new_analysis_id()
     data_root = Path(config.UPLOAD_DATA_DIR) / analysis_id
     db_path = Path(config.UPLOAD_WAREHOUSE_DIR) / f"{analysis_id}.db"
@@ -221,8 +229,9 @@ def create_analysis(bundle: UploadBundle) -> AnalysisWorkspace:
         status = "success" if code == 0 else "quality_failed"
         created_at = config.utc_now()
         metadata = {
-            "version": 1,
+            "version": 2,
             "analysis_id": analysis_id,
+            "account_id": account_id,
             "title": bundle.title or "Untitled analysis",
             "created_at": created_at,
             "status": status,
@@ -284,6 +293,12 @@ def workspace_for(analysis_id: str) -> AnalysisWorkspace | None:
     inputs = metadata.get("inputs")
     if not isinstance(inputs, dict):
         inputs = {}
+    owner_value = metadata.get("account_id")
+    account_id = (
+        owner_value
+        if isinstance(owner_value, int) and not isinstance(owner_value, bool)
+        else None
+    )
     return AnalysisWorkspace(
         analysis_id=analysis_id,
         title=_clean_text(str(metadata.get("title", "")))[:MAX_TITLE_LENGTH]
@@ -302,11 +317,21 @@ def workspace_for(analysis_id: str) -> AnalysisWorkspace | None:
             for key, value in inputs.items()
             if isinstance(value, dict)
         },
+        account_id=account_id,
     )
 
 
-def list_analyses(limit: int = 8) -> list[AnalysisWorkspace]:
-    """Newest published analyses first, ignoring incomplete workspaces."""
+def list_analyses(
+    limit: int | None = 8, *, account_id: int | None = None
+) -> list[AnalysisWorkspace]:
+    """Newest published analyses owned by one account.
+
+    Passing ``account_id=None`` returns nothing: callers must state whose
+    analyses they are asking for. Legacy analyses without an owner are kept on
+    disk but are never listed.
+    """
+    if account_id is None:
+        return []
     root = Path(config.UPLOAD_DATA_DIR)
     if not root.is_dir():
         return []
@@ -319,10 +344,63 @@ def list_analyses(limit: int = 8) -> list[AnalysisWorkspace]:
         if not is_valid_analysis_id(entry.name) or not entry.is_dir():
             continue
         workspace = workspace_for(entry.name)
-        if workspace is not None:
+        if workspace is not None and workspace.account_id == account_id:
             analyses.append(workspace)
     analyses.sort(key=lambda item: (item.created_at, item.analysis_id), reverse=True)
-    return analyses[: max(0, limit)]
+    return analyses if limit is None else analyses[: max(0, limit)]
+
+
+def delete_analysis(analysis_id: str, *, account_id: int) -> bool:
+    """Delete one analysis only when the caller owns it."""
+    workspace = workspace_for(analysis_id)
+    if workspace is None or workspace.account_id != account_id:
+        return False
+    _discard_workspace(analysis_id)
+    logger.info("analysis %s deleted by account %s", analysis_id, account_id)
+    return True
+
+
+def prune_analyses(
+    older_than_days: int,
+    *,
+    dry_run: bool = True,
+    now: datetime | None = None,
+) -> list[str]:
+    """Delete analysis workspaces older than a retention window.
+
+    ``dry_run`` is the default so an operator must opt in with ``--apply``.
+    The committed warehouse and account database are never touched.
+    """
+    if older_than_days < 1:
+        raise ValueError("older_than_days must be at least 1")
+    cutoff = (now or datetime.now(timezone.utc)) - timedelta(days=older_than_days)
+    root = Path(config.UPLOAD_DATA_DIR)
+    if not root.is_dir():
+        return []
+    expired: list[str] = []
+    try:
+        entries = list(root.iterdir())
+    except OSError:
+        return []
+    for entry in entries:
+        if not is_valid_analysis_id(entry.name) or not entry.is_dir():
+            continue
+        workspace = workspace_for(entry.name)
+        if workspace is None:
+            continue
+        try:
+            created = datetime.fromisoformat(workspace.created_at)
+        except ValueError:
+            continue
+        if created.tzinfo is None:
+            created = created.replace(tzinfo=timezone.utc)
+        if created >= cutoff:
+            continue
+        expired.append(workspace.analysis_id)
+        if not dry_run:
+            _discard_workspace(workspace.analysis_id)
+    expired.sort()
+    return expired
 
 
 def _inspect_csv(payload: bytes, label: str, columns: tuple[str, ...]) -> int:

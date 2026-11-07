@@ -274,6 +274,30 @@ def build_parser() -> argparse.ArgumentParser:
         dest="open_browser",
         help="open the dashboard in the default browser",
     )
+    serve_parser.add_argument(
+        "--secure-cookies",
+        action="store_true",
+        dest="secure_cookies",
+        help="mark the session cookie Secure and send HSTS (serve behind HTTPS)",
+    )
+    prune_parser = commands.add_parser(
+        "prune-uploads",
+        help="delete uploaded analysis workspaces older than a retention window",
+        description="List (default) or delete uploaded analysis workspaces older "
+        "than --days. The committed warehouse and the account database are never "
+        "touched. Use --apply to delete.",
+    )
+    prune_parser.add_argument(
+        "--days",
+        type=int,
+        default=30,
+        help="retention window in days (default: 30)",
+    )
+    prune_parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="delete the listed workspaces instead of only listing them",
+    )
     return parser
 
 
@@ -288,7 +312,28 @@ def main(argv: list[str] | None = None) -> int:
             host=arguments.host,
             port=arguments.port,
             open_browser=arguments.open_browser,
+            secure_cookies=arguments.secure_cookies,
         )
+    if getattr(arguments, "command", None) == "prune-uploads":
+        from . import platform
+
+        try:
+            expired = platform.prune_analyses(
+                arguments.days, dry_run=not arguments.apply
+            )
+        except ValueError as error:
+            print(f"prune-uploads: {error}")
+            return 2
+        if not expired:
+            print(f"No uploaded analyses are older than {arguments.days} day(s).")
+            return 0
+        action = "Deleted" if arguments.apply else "Would delete"
+        print(f"{action} {len(expired)} uploaded analysis workspace(s):")
+        for analysis_id in expired:
+            print(f"  {analysis_id}")
+        if not arguments.apply:
+            print("Rerun with --apply to delete them.")
+        return 0
     options = PipelineOptions(
         transactions_csv=arguments.transactions,
         profiles_csv=arguments.profiles,

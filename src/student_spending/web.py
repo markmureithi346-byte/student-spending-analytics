@@ -11,6 +11,7 @@ from __future__ import annotations
 import csv
 import html
 import io
+import json
 import logging
 import sqlite3
 import threading
@@ -23,7 +24,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from . import config
+from . import __version__, config, legal
 from .accounts import (
     MAX_DISPLAY_NAME_LENGTH,
     MAX_EMAIL_LENGTH,
@@ -86,6 +87,7 @@ from .platform import (
     PipelineFailure,
     UploadError,
     create_analysis,
+    delete_analysis,
     list_analyses,
     parse_upload,
     workspace_for,
@@ -113,7 +115,6 @@ SAMPLE_FILES = {
 MAX_AUTH_REQUEST_BYTES = 16 * 1024
 AUTH_ATTEMPT_LIMIT = 8
 AUTH_ATTEMPT_WINDOW_SECONDS = 5 * 60
-WELCOME_SECONDS = 13
 LOGO_PATH = Path(__file__).resolve().parent / "assets" / "plan-it-logo.jpg"
 _LOGO_CACHE: bytes | None = None
 
@@ -487,98 +488,39 @@ button:focus-visible { outline: 3px solid rgba(240,171,252,.55); outline-offset:
   font-size: 11px; font-weight: 800; }
 .auth-steps strong { color: var(--ink); }
 .auth-side .sample-links { margin-top: 18px; }
-.welcome-shell { max-width: 680px; }
-.welcome-card { position: relative; overflow: hidden; padding: 44px 34px 30px;
-  text-align: center; animation: welcome-in .65s cubic-bezier(.2,.9,.3,1.15) both; }
-.welcome-card::before { content: ""; position: absolute; inset: -40% -10% auto;
-  height: 78%; pointer-events: none;
-  background: radial-gradient(ellipse at 50% 0%, rgba(192,38,211,.34), transparent 70%);
-  animation: welcome-halo 3.2s ease-in-out infinite; }
-.welcome-stage { position: relative; width: 158px; height: 158px; margin: 0 auto 20px;
-  display: grid; place-items: center; }
-.welcome-halo { position: absolute; inset: -20px; border-radius: 50%;
-  background: radial-gradient(circle, rgba(192,38,211,.42), transparent 66%);
-  animation: welcome-halo 3.8s ease-in-out infinite; }
-.welcome-ring { position: absolute; inset: 0; border-radius: 50%;
-  border: 1px solid rgba(240,171,252,.4); }
-.welcome-ring.ring-one { border-top-color: #f0abfc;
-  border-right-color: rgba(240,171,252,.8);
-  animation: welcome-spin 6s linear infinite; }
-.welcome-ring.ring-two { inset: 11px; border-bottom-color: #c084fc;
-  border-left-color: rgba(192,132,252,.8);
-  animation: welcome-spin 4.4s linear infinite reverse; }
-.welcome-logo-shell { position: relative; z-index: 1; width: 132px; height: 132px;
-  border-radius: 30px; overflow: hidden;
-  box-shadow: 0 22px 42px -20px rgba(124,58,237,.95),
-  0 0 0 1px rgba(255,255,255,.18) inset;
-  animation: welcome-pop .7s .1s cubic-bezier(.2,.9,.3,1.4) both; }
-.welcome-logo { display: block; width: 100%; height: 100%; object-fit: cover;
-  animation: welcome-float 4.2s ease-in-out infinite; }
-.welcome-card .eyebrow { margin: 4px 0 8px; justify-content: center; }
-.welcome-brand { margin: 0; font-size: clamp(38px, 6vw, 56px); font-weight: 800;
-  line-height: 1; letter-spacing: -.045em;
-  background: linear-gradient(100deg, #e9d5ff, #f0abfc 45%, #c4b5fd);
-  -webkit-background-clip: text; background-clip: text; color: transparent; }
-.welcome-slogan { margin: 10px 0 0; color: #f0abfc; font-size: 15px; font-weight: 700;
-  letter-spacing: .015em; }
-.welcome-card h1 { margin: 16px 0 8px; font-size: clamp(20px, 2.8vw, 26px);
-  line-height: 1.15; letter-spacing: -.01em; color: #fff; }
-.welcome-card h1 span { background: linear-gradient(100deg, #e9d5ff, #f0abfc 50%, #c4b5fd);
-  -webkit-background-clip: text; background-clip: text; color: transparent; }
-.welcome-card .lead { max-width: 46ch; margin: 0 auto; }
-.welcome-progress { position: relative; max-width: 360px; height: 7px;
-  margin: 22px auto 12px; border-radius: 999px; overflow: hidden;
-  background: rgba(255,255,255,.08); }
-.welcome-progress span { position: absolute; inset: 0; border-radius: inherit;
-  background: linear-gradient(90deg, #7c3aed, #f0abfc, #c026d3);
-  transform-origin: left center;
-  animation: welcome-fill 12.7s .2s linear forwards; }
-.welcome-progress span::after { content: ""; position: absolute; inset: 0;
-  background: linear-gradient(100deg, transparent 30%, rgba(255,255,255,.55) 50%,
-  transparent 70%); transform: translateX(-100%);
-  animation: welcome-shimmer 1.1s .3s ease-in-out infinite; }
-.welcome-status { display: inline-flex; align-items: center; gap: 8px; margin: 0;
-  color: #d8c8ef; font-size: 13px; }
-.loading-dots { display: inline-flex; gap: 4px; }
-.loading-dots i { width: 6px; height: 6px; border-radius: 50%; background: #f0abfc;
-  animation: welcome-dot 1s ease-in-out infinite; }
-.loading-dots i:nth-child(2) { animation-delay: .15s; }
-.loading-dots i:nth-child(3) { animation-delay: .3s; }
-.welcome-facts { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center;
-  margin: 18px 0 0; }
-.welcome-facts span { padding: 4px 11px; border-radius: 999px; font-size: 11px;
-  font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: #e9d5ff;
-  background: rgba(124,58,237,.2); border: 1px solid rgba(196,181,253,.22); }
-.welcome-actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center;
-  margin: 22px 0 0; }
-.welcome-card .section-note { margin: 18px auto 0; max-width: 48ch; }
-@keyframes welcome-in {
-  from { opacity: 0; transform: translateY(16px) scale(.97); }
-  to { opacity: 1; transform: none; }
-}
-@keyframes welcome-pop {
-  from { opacity: 0; transform: scale(.4) rotate(-12deg); }
-  to { opacity: 1; transform: none; }
-}
-@keyframes welcome-spin { to { transform: rotate(360deg); } }
-@keyframes welcome-float {
-  0%, 100% { transform: translateY(-3px) scale(1); }
-  50% { transform: translateY(4px) scale(1.02); }
-}
-@keyframes welcome-halo {
-  0%, 100% { opacity: .55; transform: scale(.94); }
-  50% { opacity: 1; transform: scale(1.06); }
-}
-@keyframes welcome-fill {
-  from { transform: scaleX(0); }
-  to { transform: scaleX(1); }
-}
-@keyframes welcome-shimmer {
-  60%, 100% { transform: translateX(120%); }
-}
-@keyframes welcome-dot {
-  0%, 100% { opacity: .35; transform: translateY(0); }
-  50% { opacity: 1; transform: translateY(-3px); }
+.legal-shell { max-width: 880px; }
+.legal-body h1 { margin-bottom: 4px; }
+.legal-body h2 { margin: 26px 0 8px; font-size: 18px; }
+.legal-body p, .legal-body li { color: var(--muted); font-size: 13.5px;
+  line-height: 1.65; }
+.legal-body strong { color: var(--ink); }
+.legal-body ul { margin: 8px 0 12px; padding-left: 22px; display: grid; gap: 6px; }
+.legal-version { font-size: 12px; letter-spacing: .03em; text-transform: uppercase;
+  color: #d8b4fe; }
+.legal-nav { display: flex; flex-wrap: wrap; gap: 14px; margin: 0 0 14px; }
+.legal-nav a { color: #e9d5ff; font-size: 13px; font-weight: 700; }
+.legal-foot { margin-top: 26px; padding-top: 12px; border-top: 1px solid var(--line);
+  font-size: 12px; }
+.account-shell { max-width: 960px; }
+.account-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px; }
+.account-grid .panel { margin: 0; }
+.account-facts { display: grid; gap: 8px; margin: 14px 0; }
+.account-facts div { display: flex; justify-content: space-between; gap: 12px;
+  padding-bottom: 7px; border-bottom: 1px dashed var(--line); }
+.account-facts dt { color: var(--muted); font-size: 12.5px; }
+.account-facts dd { margin: 0; text-align: right; font-weight: 700; font-size: 13px;
+  overflow-wrap: anywhere; }
+.account-code { display: block; margin: 12px 0; padding: 12px 14px; border-radius: 12px;
+  background: rgba(124,58,237,.2); border: 1px solid rgba(196,181,253,.3);
+  color: #f5e9ff; font-size: 18px; font-weight: 800; letter-spacing: .08em;
+  text-align: center; overflow-wrap: anywhere; }
+.danger-zone { border-color: rgba(248,113,113,.4); }
+.plan-tag.near { background: rgba(251,191,36,.18); border-color: rgba(251,191,36,.4);
+  color: #fde68a; }
+.plan-export { margin-top: 14px; display: flex; justify-content: flex-end; }
+@media (max-width: 760px) {
+  .account-grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 900px) {
   .auth-grid { grid-template-columns: 1fr; }
@@ -622,11 +564,6 @@ button:focus-visible { outline: 3px solid rgba(240,171,252,.55); outline-offset:
   .receipt-stamp { top: 12px; right: 2px; }
   .account-bar { border-radius: 16px; justify-content: space-between; }
   .auth-card, .auth-side { padding: 22px 18px; }
-  .welcome-card { padding: 30px 18px 24px; }
-  .welcome-stage { width: 128px; height: 128px; }
-  .welcome-logo-shell { width: 104px; height: 104px; border-radius: 24px; }
-  .welcome-brand { font-size: 40px; }
-  .welcome-actions .button { width: 100%; }
 }
 @media (max-width: 420px) {
   .dash-cards, .plan-cards { grid-template-columns: 1fr; }
@@ -634,14 +571,10 @@ button:focus-visible { outline: 3px solid rgba(240,171,252,.55); outline-offset:
 @media (prefers-reduced-motion: reduce) {
   .button, button, .account-links .account-cta, .plan-add-button span,
   .upload-form input[type="file"]::file-selector-button,
-  .plan-row-new,
-  .welcome-card, .welcome-card::before, .welcome-halo, .welcome-ring,
-  .welcome-logo-shell, .welcome-logo, .welcome-progress span,
-  .welcome-progress span::after, .loading-dots i { animation: none; transition: none; }
+  .plan-row-new { animation: none; transition: none; }
   .button::after, button::after { display: none; }
   .button:hover, .button:active, button:hover, button:active,
   .account-links .account-cta:hover { transform: none; }
-  .welcome-progress span { transform: scaleX(1); }
 }
 @media print {
   .account-bar, .auth-side { display: none !important; }
@@ -826,7 +759,7 @@ def _safe_next(value: str, fallback: str = "/plan") -> str:
     parsed = urllib.parse.urlsplit(value)
     if parsed.scheme or parsed.netloc:
         return fallback
-    if parsed.path not in {"/", "/plan", "/upload"}:
+    if parsed.path not in {"/", "/plan", "/upload", "/account"}:
         return fallback
     query = urllib.parse.urlencode(
         urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
@@ -838,17 +771,11 @@ def _auth_href(path: str, next_path: str) -> str:
     return f"{path}?{urllib.parse.urlencode({'next': next_path})}"
 
 
-def _welcome_href(next_path: str) -> str:
-    return "/welcome?" + urllib.parse.urlencode({"next": next_path})
-
-
-def _welcome_destination(next_path: str) -> str:
-    path = urllib.parse.urlsplit(next_path).path
-    if path == "/upload":
-        return "your upload workspace"
-    if path == "/":
-        return "the sample dashboard"
-    return "your money planner"
+def _legal_links() -> str:
+    return (
+        '<span class="legal-links"><a href="/privacy">Privacy</a>'
+        '<a href="/terms">Terms</a></span>'
+    )
 
 
 def _account_bar(account: Account | None) -> str:
@@ -865,9 +792,10 @@ def _account_bar(account: Account | None) -> str:
         '<div class="account-bar">'
         f'<span class="account-mode">Signed in as '
         f"<strong>{escape_attr(account.display_name)}</strong></span>"
+        '<span class="account-links"><a href="/account">Account</a>'
         '<form method="post" action="/logout">'
         '<button class="account-signout" type="submit">Sign out</button>'
-        "</form></div>"
+        "</form></span></div>"
     )
 
 
@@ -912,8 +840,8 @@ def render_login_page(
     <section class="panel auth-card" aria-labelledby="login-title">
       <p class="eyebrow">Welcome back</p>
       <h1 id="login-title">Sign in to <span>plan your money</span></h1>
-      <p class="lead">Use the demo account you created on this machine. There is no
-        password reset and no email is sent.</p>
+      <p class="lead">Use the demo account you created on this machine. No email is
+        sent; if you saved your one-time recovery code you can reset the password.</p>
       {notice_html}
       {_plan_error_banner(errors or [])}
       <form class="auth-form" method="post" action="/login" accept-charset="utf-8">
@@ -931,6 +859,9 @@ def render_login_page(
         </div>
         <button class="button primary auth-submit" type="submit">Sign in</button>
       </form>
+      <p class="auth-alternate">Forgot the password?
+        <a href="/reset">Use a recovery code</a>
+      </p>
       <p class="auth-alternate">New here?
         <a href="{escape_attr(_auth_href('/signup', next_path))}">Create a demo account</a>
       </p>
@@ -995,6 +926,14 @@ def render_signup_page(
           <span><strong>I understand this is a demo account.</strong> I will use made-up
             details and never enter real account, card or payment credentials.</span>
         </label>
+        <label class="check-field">
+          <input type="checkbox" name="privacy_ack" value="yes" required>
+          <span><strong>I agree to the data practices described here.</strong> I have
+            read the <a href="/privacy">Privacy notice</a> and
+            <a href="/terms">Terms of use</a> (version {legal.POLICY_VERSION}). I
+            understand the time and version of this consent are recorded, and that I
+            can withdraw it by deleting my account.</span>
+        </label>
         <button class="button primary auth-submit" type="submit">Create account</button>
       </form>
       <p class="auth-alternate">Already have one?
@@ -1002,7 +941,8 @@ def render_signup_page(
       </p>
       <p class="auth-note"><strong>Stored locally.</strong> The password is saved only
         as a salted scrypt hash, and the session cookie is HttpOnly and expires after
-        {SESSION_SECONDS // 3600} hours.</p>
+        {SESSION_SECONDS // 3600} hours. A one-time recovery code is shown after
+        sign-up so you can reset the password without email.</p>
     </section>
     {_auth_side(signed_up=True)}
   </div>
@@ -1011,58 +951,254 @@ def render_signup_page(
     return _document("Create account · Student Spending Analytics", body, skip_href=None)
 
 
-def render_welcome_page(*, account: Account, next_path: str) -> str:
-    destination = _welcome_destination(next_path)
-    wait = int(WELCOME_SECONDS)
-    refresh = (
-        f'<meta http-equiv="refresh" content="{wait};'
-        f'url={escape_attr(next_path)}">\n'
+def render_reset_page(
+    *,
+    email: str = "",
+    errors: list[str] | None = None,
+) -> str:
+    body = f"""
+<main class="shell auth-shell">
+  <div class="auth-grid">
+    <section class="panel auth-card" aria-labelledby="reset-title">
+      <p class="eyebrow">Account recovery</p>
+      <h1 id="reset-title">Reset with a <span>recovery code</span></h1>
+      <p class="lead">No email is sent. Enter the one-time code shown when you created
+        the account, or when you last generated a new one.</p>
+      {_plan_error_banner(errors or [])}
+      <form class="auth-form" method="post" action="/reset" accept-charset="utf-8">
+        <div class="field">
+          <label for="reset-email">Email</label>
+          <input id="reset-email" name="email" type="email" required
+            maxlength="{MAX_EMAIL_LENGTH}" value="{escape_attr(email)}"
+            autocomplete="username" spellcheck="false">
+        </div>
+        <div class="field">
+          <label for="reset-code">Recovery code</label>
+          <input id="reset-code" name="recovery_code" type="text" required
+            maxlength="40" autocomplete="one-time-code" spellcheck="false"
+            placeholder="XXXX-XXXX-XXXX-XXXX">
+        </div>
+        <div class="field">
+          <label for="reset-password">New password</label>
+          <input id="reset-password" name="password" type="password" required
+            minlength="{MIN_PASSWORD_LENGTH}" maxlength="{MAX_PASSWORD_LENGTH}"
+            autocomplete="new-password">
+        </div>
+        <div class="field">
+          <label for="reset-confirm">Confirm new password</label>
+          <input id="reset-confirm" name="confirm" type="password" required
+            minlength="{MIN_PASSWORD_LENGTH}" maxlength="{MAX_PASSWORD_LENGTH}"
+            autocomplete="new-password">
+        </div>
+        <button class="button primary auth-submit" type="submit">Reset password</button>
+      </form>
+      <p class="auth-alternate">Remembered it?
+        <a href="/login">Back to sign in</a>
+      </p>
+      <p class="auth-note">The code is single-use and is replaced when you generate a
+        new one from the account page. A successful reset signs out every session.</p>
+    </section>
+    {_auth_side(signed_up=False)}
+  </div>
+</main>
+"""
+    return _document("Reset password · Plan It", body, skip_href=None)
+
+
+def render_account_page(
+    account: Account,
+    *,
+    new_code: str = "",
+    errors: list[str] | None = None,
+    notice: str = "",
+) -> str:
+    consent_current = (
+        account.consent_at is not None
+        and account.policy_version == legal.POLICY_VERSION
+    )
+    consent_value = (
+        f"{escape_attr(account.consent_at)} · version "
+        f"{escape_attr(account.policy_version or 'unknown')}"
+        if account.consent_at
+        else "Not recorded"
+    )
+    code_html = (
+        f'<p class="banner good" role="status"><strong>Save this recovery code now.'
+        f'</strong> It is shown once and cannot be retrieved again.</p>'
+        f'<code class="account-code">{escape_attr(new_code)}</code>'
+        if new_code
+        else ""
+    )
+    notice_html = (
+        f'<p class="banner good" role="status">{escape_attr(notice)}</p>'
+        if notice
+        else ""
+    )
+    consent_form = (
+        f"""
+      <form class="auth-form" method="post" action="/account/consent">
+        <label class="check-field">
+          <input type="checkbox" name="privacy_ack" value="yes" required>
+          <span>I have read the <a href="/privacy">Privacy notice</a> and
+            <a href="/terms">Terms of use</a> and agree to this version
+            ({legal.POLICY_VERSION}).</span>
+        </label>
+        <button class="button primary" type="submit">Record consent</button>
+      </form>"""
+        if not consent_current
+        else "<p class=\"section-note\">Consent is current for this policy version. "
+             "Withdraw it by deleting the account below.</p>"
+    )
+    recovery_note = (
+        "A recovery code is set. Generating a new one replaces the old code."
+        if account.recovery_configured
+        else "No recovery code is set. Generate one now so you can reset the password."
     )
     body = f"""
-<main class="shell auth-shell welcome-shell">
-  <section class="panel welcome-card" aria-labelledby="welcome-title">
-    <div class="welcome-stage" aria-hidden="true">
-      <span class="welcome-halo"></span>
-      <span class="welcome-ring ring-one"></span>
-      <span class="welcome-ring ring-two"></span>
-      <span class="welcome-logo-shell">
-        <img class="welcome-logo" src="/assets/plan-it-logo.jpg" alt=""
-          width="132" height="132" decoding="async">
-      </span>
+<main class="shell account-shell">
+  {_account_bar(account)}
+  <header class="hero dash-hero">
+    <p class="eyebrow">Plan It &middot; account</p>
+    <h1>Your <span>account</span></h1>
+    <p class="lede">Manage the local identity that unlocks the money planner and
+      synthetic uploads. Password re-entry is required for export, recovery and
+      deletion.</p>
+    <div class="hero-actions">
+      <a class="button primary" href="/plan">Open the planner</a>
+      <a class="button ghost" href="/upload">Open uploads</a>
     </div>
-    <p class="eyebrow">Session ready</p>
-    <p class="welcome-brand">Plan It</p>
-    <p class="welcome-slogan">Let&rsquo;s save money by planning</p>
-    <h1 id="welcome-title">Welcome, <span>{escape_attr(account.display_name)}</span></h1>
-    <p class="lead">You are signed in on this computer. Opening {destination}
-      automatically in {wait} seconds.</p>
-    <div class="welcome-progress" role="progressbar" aria-label="Loading {destination}">
-      <span></span>
-    </div>
-    <p class="welcome-status" role="status">Preparing your workspace
-      <span class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
-    </p>
-    <p class="welcome-facts" aria-label="Session details">
-      <span>Local only</span>
-      <span>{SESSION_SECONDS // 3600}-hour session</span>
-      <span>No remote calls</span>
-    </p>
-    <div class="welcome-actions">
-      <a class="button primary" href="{escape_attr(next_path)}">Continue now</a>
-      <a class="button ghost" href="/">Explore the sample</a>
-    </div>
-    <p class="section-note">This screen stages the Plan It logo for {wait} seconds and
-      then opens {destination} on its own. Continue now skips the wait, and no
-      JavaScript runs.</p>
+  </header>
+  {code_html}
+  {notice_html}
+  {_plan_error_banner(errors or [])}
+  <section class="panel" aria-labelledby="account-facts-title">
+    <p class="eyebrow">Identity</p>
+    <h2 id="account-facts-title">Stored locally</h2>
+    <dl class="account-facts">
+      <div><dt>Display name</dt><dd>{escape_attr(account.display_name)}</dd></div>
+      <div><dt>Email</dt><dd>{escape_attr(account.email)}</dd></div>
+      <div><dt>Created</dt><dd>{escape_attr(account.created_at)}</dd></div>
+      <div><dt>Privacy consent</dt><dd>{consent_value}</dd></div>
+      <div><dt>Recovery code</dt><dd>{"Set" if account.recovery_configured else "Not set"}</dd></div>
+    </dl>
+  </section>
+  <div class="account-grid">
+    <section class="panel" aria-labelledby="account-consent-title">
+      <p class="eyebrow">Consent</p>
+      <h2 id="account-consent-title">Privacy choices</h2>
+      <p class="section-note">The timestamp and policy version are recorded with the
+        account. Withdrawal means deleting the account and its uploads.
+        {escape_attr(legal.DRAFT_NOTICE)}</p>
+      {consent_form}
+    </section>
+    <section class="panel" aria-labelledby="account-recovery-title">
+      <p class="eyebrow">Recovery</p>
+      <h2 id="account-recovery-title">Recovery code</h2>
+      <p class="section-note">{recovery_note}</p>
+      <form class="auth-form" method="post" action="/account/recovery">
+        <div class="field">
+          <label for="recovery-password">Current password</label>
+          <input id="recovery-password" name="current_password" type="password"
+            required maxlength="{MAX_PASSWORD_LENGTH}" autocomplete="current-password">
+        </div>
+        <button class="button ghost" type="submit">Generate a new code</button>
+      </form>
+    </section>
+    <section class="panel" aria-labelledby="account-password-title">
+      <p class="eyebrow">Password</p>
+      <h2 id="account-password-title">Change password</h2>
+      <p class="section-note">Changing the password signs out every session,
+        including this one.</p>
+      <form class="auth-form" method="post" action="/account/password">
+        <div class="field">
+          <label for="password-current">Current password</label>
+          <input id="password-current" name="current_password" type="password"
+            required maxlength="{MAX_PASSWORD_LENGTH}" autocomplete="current-password">
+        </div>
+        <div class="field">
+          <label for="password-new">New password</label>
+          <input id="password-new" name="new_password" type="password" required
+            minlength="{MIN_PASSWORD_LENGTH}" maxlength="{MAX_PASSWORD_LENGTH}"
+            autocomplete="new-password">
+        </div>
+        <div class="field">
+          <label for="password-confirm">Confirm new password</label>
+          <input id="password-confirm" name="confirm" type="password" required
+            minlength="{MIN_PASSWORD_LENGTH}" maxlength="{MAX_PASSWORD_LENGTH}"
+            autocomplete="new-password">
+        </div>
+        <button class="button primary" type="submit">Change password</button>
+      </form>
+    </section>
+    <section class="panel" aria-labelledby="account-export-title">
+      <p class="eyebrow">Your data</p>
+      <h2 id="account-export-title">Export account data</h2>
+      <p class="section-note">Downloads a JSON file with the account record, consent
+        and upload metadata. It never includes the password or recovery-code hash.
+        Plans are not stored, so there is no plan history to export.</p>
+      <form class="auth-form" method="post" action="/account/export">
+        <div class="field">
+          <label for="export-password">Password</label>
+          <input id="export-password" name="password" type="password" required
+            maxlength="{MAX_PASSWORD_LENGTH}" autocomplete="current-password">
+        </div>
+        <button class="button ghost" type="submit">Download JSON</button>
+      </form>
+    </section>
+  </div>
+  <section class="panel danger-zone" aria-labelledby="account-delete-title">
+    <p class="eyebrow">Danger zone</p>
+    <h2 id="account-delete-title">Withdraw consent and delete account</h2>
+    <p class="lead">This removes the account, every session and every uploaded
+      analysis owned by the account. It cannot be undone.</p>
+    <form class="auth-form" method="post" action="/account/delete">
+      <div class="field">
+        <label for="delete-password">Password</label>
+        <input id="delete-password" name="password" type="password" required
+          maxlength="{MAX_PASSWORD_LENGTH}" autocomplete="current-password">
+      </div>
+      <label class="check-field">
+        <input type="checkbox" name="confirm_delete" value="yes" required>
+        <span>I understand this permanently deletes the account and its uploads.</span>
+      </label>
+      <button class="button ghost danger" type="submit">Delete my account</button>
+    </form>
+  </section>
+  <footer class="panel footer">
+    <p><strong>Local by design.</strong> Nothing on this page is sent to a remote
+      service. {escape_attr(legal.DISCLAIMER)}</p>
+    <div class="footer-links">{_legal_links()}<a class="totop" href="/">Dashboard</a></div>
+  </footer>
+</main>
+"""
+    return _document("Account · Plan It", body, skip_href=None)
+
+
+def render_delete_analysis_page(analysis: AnalysisWorkspace) -> str:
+    body = f"""
+<main class="shell">
+  <section class="panel error-page" aria-labelledby="delete-analysis-title">
+    <p class="eyebrow">Delete analysis</p>
+    <h2 id="delete-analysis-title">Delete {escape_attr(analysis.title)}?</h2>
+    <p>This removes the uploaded CSV copy, the isolated SQLite warehouse and the
+      report for <code>{escape_attr(analysis.analysis_id)}</code>. The account and
+      the committed sample warehouse are not affected.</p>
+    <p class="banner bad" role="alert"><strong>This cannot be undone.</strong></p>
+    <form method="post" action="/delete-analysis">
+      <input type="hidden" name="analysis_id" value="{escape_attr(analysis.analysis_id)}">
+      <div class="plan-actions">
+        <button class="button ghost danger" type="submit">Delete this analysis</button>
+        <a class="button primary" href="/upload">Keep it</a>
+      </div>
+    </form>
   </section>
 </main>
 """
-    return _document(
-        "Plan It · Welcome",
-        body,
-        skip_href=None,
-        extra_head=refresh,
-    )
+    return _document("Delete analysis · Plan It", body, skip_href=None)
+
+
+def render_legal_page(title: str, body: str) -> str:
+    return _document(f"{title} · Plan It", body)
 
 
 def load_options(connection: sqlite3.Connection) -> FilterOptions:
@@ -1846,10 +1982,11 @@ def _footer(
       SQLite as a bound parameter, and the warehouse is opened with <code>mode=ro</code>.
       Filter values are not written or stored.</p>
     <p class="section-note">{dataset_note}</p>
+    <p class="section-note">{escape_attr(legal.DISCLAIMER)}</p>
     <p class="meta-line">Student Spending Analytics &middot; latest run
       <code>{escape_attr(run.get("run_id", "none"))}</code> &middot; finished
       <code>{escape_attr(run.get("finished_at") or "not finished")}</code></p>
-    <div class="footer-links">{report_note}
+    <div class="footer-links">{_legal_links()}{report_note}
       <a class="totop" href="/plan">Plan your own money</a>
       <a class="totop" href="/upload">Analyze another dataset</a>
       <a class="totop" href="#top">Back to top</a></div>
@@ -1938,6 +2075,69 @@ def render_csv(connection: sqlite3.Connection, filters: Filters) -> str:
     return buffer.getvalue()
 
 
+def render_plan_csv(plan: MoneyPlan, analysis: PlanAnalysis) -> str:
+    """The same plan figures as the page, in a spreadsheet-friendly file."""
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(["Plan It money plan export"])
+    writer.writerow(["Recorded", _csv_safe(analysis.recorded_at.isoformat(timespec="minutes"))])
+    writer.writerow(["Student", _csv_safe(plan.student_name)])
+    writer.writerow(["Period", _csv_safe(plan.period_label)])
+    writer.writerow(["Method", _csv_safe(BUDGET_METHODS[plan.method])])
+    writer.writerow(["Money available (KES)", f"{analysis.money_available_cents / 100:.2f}"])
+    writer.writerow([])
+    writer.writerow(["Categories"])
+    writer.writerow(
+        ["Category", "Type", "Planned KES", "Spent KES", "Planned minus spent KES",
+         "Share of spending %", "Status"]
+    )
+    shares = display_share_pcts([item.share_pct for item in analysis.categories])
+    for item, share in zip(analysis.categories, shares):
+        writer.writerow(
+            [
+                _csv_safe(item.name),
+                "Essential" if item.essential else "Flexible",
+                f"{item.planned_cents / 100:.2f}",
+                f"{item.spent_cents / 100:.2f}",
+                f"{item.difference_cents / 100:.2f}",
+                f"{share:.1f}",
+                _csv_safe(item.status),
+            ]
+        )
+    writer.writerow(
+        [
+            "Total",
+            "",
+            f"{analysis.planned_cents / 100:.2f}",
+            f"{analysis.spent_cents / 100:.2f}",
+            f"{(analysis.planned_cents - analysis.spent_cents) / 100:.2f}",
+            "100.0",
+            "",
+        ]
+    )
+    writer.writerow([])
+    writer.writerow(["Spending entries"])
+    writer.writerow(["Category", "Note", "Amount KES"])
+    for entry in plan.spendings:
+        writer.writerow(
+            [
+                _csv_safe(entry.category),
+                _csv_safe(entry.note),
+                f"{entry.amount_cents / 100:.2f}",
+            ]
+        )
+    writer.writerow([])
+    writer.writerow(["Summary"])
+    writer.writerow(["Planned total KES", f"{analysis.planned_cents / 100:.2f}"])
+    writer.writerow(["Recorded spending KES", f"{analysis.spent_cents / 100:.2f}"])
+    writer.writerow(["Left unspent KES", f"{analysis.remaining_cents / 100:.2f}"])
+    writer.writerow(["Unallocated KES", f"{analysis.unallocated_cents / 100:.2f}"])
+    writer.writerow(["Average per entry KES", f"{analysis.average_entry_cents / 100:.2f}"])
+    writer.writerow([])
+    writer.writerow([legal.DISCLAIMER])
+    return buffer.getvalue()
+
+
 def _upload_errors(errors: list[str]) -> str:
     if not errors:
         return ""
@@ -2000,7 +2200,8 @@ def _recent_analyses(analyses: list[AnalysisWorkspace]) -> str:
           · {integer(analysis.rows_accepted)} accepted rows</p>
         <div class="recent-actions">
           <a class="button primary small" href="/{_analysis_suffix(analysis)}">Open analysis</a>
-          {report_link}{source_note}
+          {report_link}<a class="button ghost small"
+            href="/delete-analysis?{urllib.parse.urlencode({'analysis': analysis.analysis_id})}">Delete</a>{source_note}
         </div>
       </li>"""
         )
@@ -2014,12 +2215,18 @@ def render_upload_page(
     title: str = "",
     current_analysis: AnalysisWorkspace | None = None,
     account: Account | None = None,
+    notice: str = "",
 ) -> str:
     back_link = (
         f'<a class="button ghost" href="/{_analysis_suffix(current_analysis)}">'
         "Open current analysis</a>"
         if current_analysis
         else '<a class="button ghost" href="/">Open the sample dashboard</a>'
+    )
+    notice_html = (
+        f'<p class="banner good" role="status">{escape_attr(notice)}</p>'
+        if notice
+        else ""
     )
     file_bytes = MAX_FILE_BYTES // (1024 * 1024)
     body = f"""
@@ -2041,6 +2248,7 @@ def render_upload_page(
       learning exercise.</p>
   </header>
 
+  {notice_html}
   <nav class="toc" aria-label="Analysis workspace sections">
     <a href="#upload-form">Upload</a><a href="#recent">Recent analyses</a>
   </nav>
@@ -2101,7 +2309,9 @@ def render_upload_page(
       analysis write paths, and analysis pages open SQLite with <code>mode=ro</code>.
       Keep the server on loopback and use made-up credentials.</p>
     <p class="meta-line">Student Spending Analytics &middot; synthetic data only</p>
+    <p class="section-note">{escape_attr(legal.DISCLAIMER)}</p>
     <div class="footer-links">
+      {_legal_links()}
       <a class="totop" href="/">Open the sample dashboard</a>
       <a class="totop" href="/plan">Plan your own money</a>
       <a class="totop" href="#top">Back to top</a>
@@ -2393,7 +2603,9 @@ def render_plan_page(
       credentials are collected.</p>
     <p class="meta-line">Student Spending Analytics &middot; money plan &middot;
       made-up numbers only</p>
+    <p class="section-note">{escape_attr(legal.DISCLAIMER)}</p>
     <div class="footer-links">
+      {_legal_links()}
       <a class="totop" href="/">Explore the sample dataset</a>
       <a class="totop" href="/upload">Analyze a transactions CSV</a>
       <a class="totop" href="#top">Back to top</a>
@@ -2489,6 +2701,14 @@ def _plan_banners(plan: object, analysis: object) -> str:
             ("note", "Plan",
              f"The plan leaves KES {money(analysis.unallocated_cents / 100)} unallocated; "
              "it can be a buffer.")
+        )
+    if analysis.near_plan:
+        count = len(analysis.near_plan)
+        verb = "category has" if count == 1 else "categories have"
+        banners.append(
+            ("note", "Close to plan",
+             f"{count} {verb} used 80% or more of the planned amount but is not over it: "
+             f"{_names(analysis.near_plan)}.")
         )
     return "".join(
         f'<div class="banner {kind}" role="status"><strong>{escape_attr(label)}.</strong> '
@@ -2618,6 +2838,7 @@ def _plan_category_panel(plan: object, analysis: object) -> str:
     category_shares = display_share_pcts(
         [item.share_pct for item in analysis.categories]
     )
+    near_names = {item.name for item in analysis.near_plan}
     rows: list[list[str]] = []
     row_classes: list[str] = []
     for item, share in zip(analysis.categories, category_shares):
@@ -2629,6 +2850,8 @@ def _plan_category_panel(plan: object, analysis: object) -> str:
             f"{escape_attr(item.name)}"
             f'<span class="plan-tag">{"Essential" if item.essential else "Flexible"}</span>'
         )
+        if item.name in near_names:
+            category += '<span class="plan-tag near">80%+ of plan</span>'
         rows.append(
             [
                 category,
@@ -2976,6 +3199,10 @@ def _plan_analysis_sections(
       <a class="button ghost" href="#coach">Ask the coach</a>
       <a class="button ghost" href="#money">Change the numbers</a>
     </div>
+    <form class="plan-export" method="post" action="/plan.csv" accept-charset="utf-8">
+      {_plan_snapshot_fields(draft, category_rows=category_rows, spending_rows=spending_rows)}
+      <button class="button ghost" type="submit">Download this plan as CSV</button>
+    </form>
   </section>
   {_plan_receipt_panel(plan, analysis)}
   {_plan_category_panel(plan, analysis)}
@@ -3010,18 +3237,19 @@ def _cookie_value(header: str, name: str) -> str:
     return ""
 
 
-def _session_cookie(token: str) -> tuple[str, str]:
+def _session_cookie(token: str, *, secure: bool = False) -> tuple[str, str]:
     return (
         "Set-Cookie",
         f"{SESSION_COOKIE}={token}; Path=/; HttpOnly; SameSite=Strict; "
-        f"Max-Age={SESSION_SECONDS}",
+        f"{'Secure; ' if secure else ''}Max-Age={SESSION_SECONDS}",
     )
 
 
-def _cleared_cookie() -> tuple[str, str]:
+def _cleared_cookie(*, secure: bool = False) -> tuple[str, str]:
     return (
         "Set-Cookie",
-        f"{SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0",
+        f"{SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Strict; "
+        f"{'Secure; ' if secure else ''}Max-Age=0",
     )
 
 
@@ -3071,17 +3299,21 @@ class DashboardServer(ThreadingHTTPServer):
     allow_reuse_address = True
 
     def __init__(self, address: tuple[str, int], *, db_path: Path, report_path: Path,
-                 accounts_path: Path | str | None = None):
+                 accounts_path: Path | str | None = None,
+                 secure_cookies: bool = False):
         super().__init__(address, DashboardHandler)
         self.db_path = db_path
         self.report_path = report_path
         self.accounts = AccountStore(accounts_path or config.ACCOUNTS_DB_PATH)
         self.login_attempts = _AttemptLimiter()
+        self.secure_cookies = secure_cookies
+        self.pending_recovery: dict[int, str] = {}
+        self.recovery_lock = threading.Lock()
 
 
 class DashboardHandler(BaseHTTPRequestHandler):
     server: DashboardServer
-    server_version = "StudentSpendingDashboard/2.8.0"
+    server_version = f"PlanItDashboard/{__version__}"
     sys_version = ""
     timeout = 30
 
@@ -3097,30 +3329,47 @@ class DashboardHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:  # noqa: N802 - required by http.server
         path = urllib.parse.urlsplit(self.path).path
         try:
-            if path in ("/login", "/signup", "/logout"):
+            if path in ("/login", "/signup", "/logout", "/reset"):
                 if self.command != "POST":
                     self._method_not_allowed()
                 elif path == "/login":
                     self._handle_login()
                 elif path == "/signup":
                     self._handle_signup()
+                elif path == "/reset":
+                    self._handle_reset()
                 else:
                     self._handle_logout()
+            elif path.startswith("/account/"):
+                kind = path.removeprefix("/account/")
+                if self.command != "POST" or kind not in {
+                    "consent", "recovery", "password", "export", "delete"
+                }:
+                    self._method_not_allowed()
+                else:
+                    self._handle_account_action(kind)
             elif path == "/upload":
                 self._create_analysis()
             elif path == "/plan":
                 self._create_plan()
+            elif path == "/plan.csv":
+                self._handle_plan_csv()
+            elif path == "/delete-analysis":
+                self._handle_delete_analysis()
             else:
                 self._method_not_allowed()
         except Exception:  # noqa: BLE001 - one bad request must not stop the server
             logger.exception("unexpected POST failure for %s", path)
             action = {
                 "/plan": "/plan",
+                "/plan.csv": "/plan",
                 "/upload": "/upload",
                 "/login": "/login",
                 "/signup": "/signup",
                 "/logout": "/login",
-            }.get(path, "/")
+                "/reset": "/reset",
+                "/delete-analysis": "/upload",
+            }.get(path, "/account" if path.startswith("/account") else "/")
             self._safe_send(
                 HTTPStatus.INTERNAL_SERVER_ERROR,
                 _error_document(
@@ -3149,7 +3398,28 @@ class DashboardHandler(BaseHTTPRequestHandler):
     def _no_content(self) -> None:
         self.send_response(HTTPStatus.NO_CONTENT)
         self.send_header("Cache-Control", "no-store")
+        self._security_headers()
         self.end_headers()
+
+    def _security_headers(self) -> None:
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "same-origin")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header(
+            "Permissions-Policy",
+            "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
+        )
+        self.send_header("Cross-Origin-Opener-Policy", "same-origin")
+        self.send_header("Cross-Origin-Resource-Policy", "same-origin")
+        self.send_header(
+            "Content-Security-Policy",
+            "default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; "
+            "form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
+        )
+        if self.server.secure_cookies:
+            self.send_header(
+                "Strict-Transport-Security", "max-age=31536000; includeSubDomains"
+            )
 
     def _send(self, status: int, body: str, *, headers: list[tuple[str, str]] | None = None,
               content_type: str = "text/html; charset=utf-8",
@@ -3172,13 +3442,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(payload)))
         self.send_header("Cache-Control", cache_control)
-        self.send_header("X-Content-Type-Options", "nosniff")
-        self.send_header("Referrer-Policy", "same-origin")
-        self.send_header(
-            "Content-Security-Policy",
-            "default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; "
-            "form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
-        )
+        self._security_headers()
         for name, value in headers or ():
             self.send_header(name, value)
         self.end_headers()
@@ -3208,11 +3472,22 @@ class DashboardHandler(BaseHTTPRequestHandler):
         account = self._require_account(_safe_next(self.path, "/upload"))
         if account is None:
             return
-        current = workspace_for(_first(query, "analysis"))
+        requested = workspace_for(_first(query, "analysis"))
+        current = (
+            requested
+            if requested is not None and requested.account_id == account.account_id
+            else None
+        )
+        notice = ""
+        if _first(query, "deleted") == "1":
+            notice = "That analysis and its files were removed from this machine."
+        elif _first(query, "missing") == "1":
+            notice = "That analysis is no longer available."
         body = render_upload_page(
-            analyses=list_analyses(),
+            analyses=list_analyses(account_id=account.account_id),
             current_analysis=current,
             account=account,
+            notice=notice,
         )
         self._send(HTTPStatus.OK, body, head_only=head_only)
 
@@ -3231,11 +3506,18 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if self._current_account() is not None:
             self._redirect(next_path)
             return
-        notice = (
-            "You are signed out. Sign in again to use the planner or uploads."
-            if _first(query, "signedout") == "1"
-            else ""
-        )
+        notice = ""
+        if _first(query, "signedout") == "1":
+            notice = "You are signed out. Sign in again to use the planner or uploads."
+        elif _first(query, "reset") == "1":
+            notice = "Password reset complete. Sign in with the new password."
+        elif _first(query, "changed") == "1":
+            notice = "Password changed. Sign in again with the new password."
+        elif _first(query, "deleted") == "1":
+            notice = (
+                "Account deleted. Its account record, sessions and uploads were "
+                "removed from this machine."
+            )
         self._send(
             HTTPStatus.OK,
             render_login_page(next_path=next_path, notice=notice),
@@ -3254,15 +3536,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
         )
 
     def _welcome_page(self, query: dict[str, list[str]], *, head_only: bool) -> None:
+        # The artificial loading screen was removed: sign-in lands on the page the
+        # student asked for. The old address redirects so saved links still work.
         next_path = _safe_next(_first(query, "next"))
         account = self._require_account(next_path)
         if account is None:
             return
-        self._send(
-            HTTPStatus.OK,
-            render_welcome_page(account=account, next_path=next_path),
-            head_only=head_only,
-        )
+        self._redirect(next_path)
 
     def _client_key(self) -> str:
         return str(self.client_address[0]) if self.client_address else "local"
@@ -3420,7 +3700,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     next_path=next_path,
                     errors=[
                         "That email and password did not match. Check both and try "
-                        "again; there is no password reset."
+                        "again, or reset the password with your recovery code."
                     ],
                 ),
             )
@@ -3428,7 +3708,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
         self.server.login_attempts.clear(key)
         token = self.server.accounts.create_session(account.account_id)
-        self._redirect(_welcome_href(next_path), headers=[_session_cookie(token)])
+        self._redirect(
+            next_path,
+            headers=[_session_cookie(token, secure=self.server.secure_cookies)],
+        )
 
     def _handle_signup(self) -> None:
         if not self._same_origin():
@@ -3456,6 +3739,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         password = _first(form, "password")
         confirm = _first(form, "confirm")
         acknowledged = _first(form, "demo_ack") == "yes"
+        privacy_acknowledged = _first(form, "privacy_ack") == "yes"
 
         name = raw_name
         email = raw_email
@@ -3479,6 +3763,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 "Confirm that this is a demo account and that no real financial "
                 "details will be entered."
             )
+        if not privacy_acknowledged:
+            errors.append(
+                "Read and agree to the privacy notice and terms before creating "
+                "the account."
+            )
 
         if errors:
             self._send(
@@ -3493,7 +3782,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
 
         try:
-            account = self.server.accounts.create_account(name, email, password)
+            account = self.server.accounts.create_account(
+                name, email, password, consented=True
+            )
         except AccountError as error:
             self._send(
                 HTTPStatus.UNPROCESSABLE_ENTITY,
@@ -3508,7 +3799,449 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
         token = self.server.accounts.create_session(account.account_id)
         logger.info("created demo account %s", account.account_id)
-        self._redirect(_welcome_href(next_path), headers=[_session_cookie(token)])
+        # The recovery code is shown once on the account page. Only its digest is
+        # written to disk, so it is held in memory until that page renders.
+        code = self.server.accounts.generate_recovery_code(
+            account.account_id, password
+        )
+        if code:
+            self._stash_recovery_code(account.account_id, code)
+        self._redirect(
+            "/account?new=1",
+            headers=[_session_cookie(token, secure=self.server.secure_cookies)],
+        )
+
+    def _stash_recovery_code(self, account_id: int, code: str) -> None:
+        with self.server.recovery_lock:
+            self.server.pending_recovery[account_id] = code
+
+    def _take_recovery_code(self, account_id: int) -> str:
+        with self.server.recovery_lock:
+            return self.server.pending_recovery.pop(account_id, "")
+
+    def _account_page(self, query: dict[str, list[str]], *, head_only: bool) -> None:
+        account = self._require_account("/account")
+        if account is None:
+            return
+        new_code = ""
+        if _first(query, "new") == "1" or _first(query, "recovery") == "1":
+            new_code = self._take_recovery_code(account.account_id)
+        notice = ""
+        if _first(query, "consent") == "1":
+            notice = "Privacy consent was recorded for this policy version."
+        self._send(
+            HTTPStatus.OK,
+            render_account_page(account, new_code=new_code, notice=notice),
+            head_only=head_only,
+        )
+
+    def _reset_page(self, query: dict[str, list[str]], *, head_only: bool) -> None:
+        if self._current_account() is not None:
+            self._redirect("/account")
+            return
+        self._send(
+            HTTPStatus.OK,
+            render_reset_page(email=_first(query, "email")),
+            head_only=head_only,
+        )
+
+    def _legal_page(self, title: str, body: str, *, head_only: bool) -> None:
+        self._send(
+            HTTPStatus.OK,
+            render_legal_page(title, body),
+            head_only=head_only,
+        )
+
+    def _delete_analysis_page(
+        self, query: dict[str, list[str]], *, head_only: bool
+    ) -> None:
+        account = self._require_account("/upload")
+        if account is None:
+            return
+        analysis = workspace_for(_first(query, "analysis"))
+        if analysis is None or analysis.account_id != account.account_id:
+            self._redirect("/upload?missing=1")
+            return
+        self._send(
+            HTTPStatus.OK,
+            render_delete_analysis_page(analysis),
+            head_only=head_only,
+        )
+
+    def _handle_reset(self) -> None:
+        if not self._same_origin():
+            self._blocked_request(
+                "Reset the password from this dashboard's own form.",
+                "/reset",
+                "Back to the reset form",
+            )
+            return
+        try:
+            form = self._read_auth_form()
+        except _AuthRequestError as error:
+            self._send(
+                error.status,
+                render_reset_page(errors=[str(error)]),
+                headers=[("Connection", "close")],
+            )
+            self.close_connection = True
+            return
+
+        email = _first(form, "email").strip()
+        code = _first(form, "recovery_code")
+        password = _first(form, "password")
+        confirm = _first(form, "confirm")
+        errors: list[str] = []
+        try:
+            validate_email(email)
+        except AccountError as error:
+            errors.append(str(error))
+        try:
+            validate_password(password)
+        except AccountError as error:
+            errors.append(str(error))
+        if password != confirm:
+            errors.append("The two passwords do not match.")
+        if not code.strip():
+            errors.append("Enter the one-time recovery code.")
+        if errors:
+            self._send(
+                HTTPStatus.UNPROCESSABLE_ENTITY,
+                render_reset_page(email=email, errors=errors),
+            )
+            return
+
+        key = "account:" + self._client_key()
+        if self.server.login_attempts.blocked(key):
+            self._send(
+                HTTPStatus.TOO_MANY_REQUESTS,
+                render_reset_page(
+                    email=email,
+                    errors=[
+                        "Too many recovery attempts from this address. Wait a few "
+                        "minutes and try again."
+                    ],
+                ),
+                headers=[
+                    ("Retry-After", str(AUTH_ATTEMPT_WINDOW_SECONDS)),
+                    ("Connection", "close"),
+                ],
+            )
+            self.close_connection = True
+            return
+
+        if not self.server.accounts.reset_password(email, code, password):
+            self.server.login_attempts.record_failure(key)
+            logger.info("password reset rejected for an unknown email or code")
+            self._send(
+                HTTPStatus.UNPROCESSABLE_ENTITY,
+                render_reset_page(
+                    email=email,
+                    errors=[
+                        "That email and recovery code did not match, or the code was "
+                        "already used. Check both and try again."
+                    ],
+                ),
+            )
+            return
+
+        self.server.login_attempts.clear(key)
+        logger.info("password reset with a recovery code")
+        self._redirect("/login?reset=1")
+
+    def _handle_account_action(self, kind: str) -> None:
+        account = self._require_account("/account", close=True)
+        if account is None:
+            return
+        if not self._same_origin():
+            self._blocked_request(
+                "Manage the account from this dashboard's own form.",
+                "/account",
+                "Back to the account page",
+            )
+            return
+        try:
+            form = self._read_auth_form()
+        except _AuthRequestError as error:
+            self._send(
+                error.status,
+                render_account_page(account, errors=[str(error)]),
+                headers=[("Connection", "close")],
+            )
+            self.close_connection = True
+            return
+
+        key = "account:" + self._client_key()
+        if self.server.login_attempts.blocked(key):
+            self._send(
+                HTTPStatus.TOO_MANY_REQUESTS,
+                render_account_page(
+                    account,
+                    errors=[
+                        "Too many password attempts from this address. Wait a few "
+                        "minutes and try again."
+                    ],
+                ),
+                headers=[
+                    ("Retry-After", str(AUTH_ATTEMPT_WINDOW_SECONDS)),
+                    ("Connection", "close"),
+                ],
+            )
+            self.close_connection = True
+            return
+
+        if kind == "consent":
+            if _first(form, "privacy_ack") != "yes":
+                self._send(
+                    HTTPStatus.UNPROCESSABLE_ENTITY,
+                    render_account_page(
+                        account,
+                        errors=["Tick the consent box to record this version."],
+                    ),
+                )
+                return
+            self.server.accounts.set_consent(account.account_id)
+            self._redirect("/account?consent=1")
+            return
+
+        if kind == "recovery":
+            code = self.server.accounts.generate_recovery_code(
+                account.account_id, _first(form, "current_password")
+            )
+            if code is None:
+                self.server.login_attempts.record_failure(key)
+                self._send(
+                    HTTPStatus.UNPROCESSABLE_ENTITY,
+                    render_account_page(
+                        account,
+                        errors=["That password did not match. Try again."],
+                    ),
+                )
+                return
+            self.server.login_attempts.clear(key)
+            self._stash_recovery_code(account.account_id, code)
+            self._redirect("/account?recovery=1")
+            return
+
+        if kind == "password":
+            new_password = _first(form, "new_password")
+            confirm = _first(form, "confirm")
+            errors: list[str] = []
+            try:
+                validate_password(new_password)
+            except AccountError as error:
+                errors.append(str(error))
+            if new_password != confirm:
+                errors.append("The two new passwords do not match.")
+            if errors:
+                self._send(
+                    HTTPStatus.UNPROCESSABLE_ENTITY,
+                    render_account_page(account, errors=errors),
+                )
+                return
+            changed = self.server.accounts.change_password(
+                account.account_id, _first(form, "current_password"), new_password
+            )
+            if not changed:
+                self.server.login_attempts.record_failure(key)
+                self._send(
+                    HTTPStatus.UNPROCESSABLE_ENTITY,
+                    render_account_page(
+                        account,
+                        errors=["That current password did not match. Try again."],
+                    ),
+                )
+                return
+            self.server.login_attempts.clear(key)
+            logger.info("password changed for account %s", account.account_id)
+            self._redirect(
+                "/login?changed=1",
+                headers=[_cleared_cookie(secure=self.server.secure_cookies)],
+            )
+            return
+
+        if kind == "export":
+            if not self.server.accounts.verify_account_password(
+                account.account_id, _first(form, "password")
+            ):
+                self.server.login_attempts.record_failure(key)
+                self._send(
+                    HTTPStatus.UNPROCESSABLE_ENTITY,
+                    render_account_page(
+                        account,
+                        errors=["That password did not match. Try again."],
+                    ),
+                )
+                return
+            self.server.login_attempts.clear(key)
+            uploads = list_analyses(limit=None, account_id=account.account_id)
+            payload = {
+                "service": "Plan It",
+                "exported_at": config.utc_now(),
+                "policy_version": legal.POLICY_VERSION,
+                "disclaimer": legal.DISCLAIMER,
+                "account": {
+                    "display_name": account.display_name,
+                    "email": account.email,
+                    "created_at": account.created_at,
+                    "consent_at": account.consent_at,
+                    "consent_policy_version": account.policy_version,
+                    "recovery_code_configured": account.recovery_configured,
+                },
+                "uploads": [
+                    {
+                        "analysis_id": item.analysis_id,
+                        "title": item.title,
+                        "created_at": item.created_at,
+                        "status": item.status,
+                        "rows_accepted": item.rows_accepted,
+                    }
+                    for item in uploads
+                ],
+                "not_exported": (
+                    "Passwords and recovery-code digests are never exported. Money "
+                    "plans are not stored, so there is no plan history to export."
+                ),
+            }
+            body = json.dumps(payload, indent=2, ensure_ascii=False)
+            self._send_payload(
+                HTTPStatus.OK,
+                body.encode("utf-8"),
+                headers=[
+                    (
+                        "Content-Disposition",
+                        'attachment; filename="plan-it-account-export.json"',
+                    )
+                ],
+                content_type="application/json; charset=utf-8",
+            )
+            return
+
+        if kind == "delete":
+            if _first(form, "confirm_delete") != "yes":
+                self._send(
+                    HTTPStatus.UNPROCESSABLE_ENTITY,
+                    render_account_page(
+                        account,
+                        errors=["Tick the confirmation box to delete the account."],
+                    ),
+                )
+                return
+            if not self.server.accounts.verify_account_password(
+                account.account_id, _first(form, "password")
+            ):
+                self.server.login_attempts.record_failure(key)
+                self._send(
+                    HTTPStatus.UNPROCESSABLE_ENTITY,
+                    render_account_page(
+                        account,
+                        errors=["That password did not match. Try again."],
+                    ),
+                )
+                return
+            self.server.login_attempts.clear(key)
+            for item in list_analyses(limit=None, account_id=account.account_id):
+                delete_analysis(item.analysis_id, account_id=account.account_id)
+            self.server.accounts.delete_account(account.account_id)
+            logger.info("account %s deleted", account.account_id)
+            self._redirect(
+                "/login?deleted=1",
+                headers=[_cleared_cookie(secure=self.server.secure_cookies)],
+            )
+            return
+
+        self._redirect("/account")
+
+    def _handle_delete_analysis(self) -> None:
+        account = self._require_account("/upload", close=True)
+        if account is None:
+            return
+        if not self._same_origin():
+            self._blocked_request(
+                "Delete an upload from this dashboard's own page.",
+                "/upload",
+                "Back to uploads",
+            )
+            return
+        try:
+            form = self._read_auth_form()
+        except _AuthRequestError as error:
+            self._send(error.status, _error_document(
+                "Delete not accepted", str(error), action_href="/upload"
+            ), headers=[("Connection", "close")])
+            self.close_connection = True
+            return
+        analysis_id = _first(form, "analysis_id")
+        if not delete_analysis(analysis_id, account_id=account.account_id):
+            self._send(
+                HTTPStatus.NOT_FOUND,
+                _error_document(
+                    "Analysis not found",
+                    "That analysis is not available or belongs to another account.",
+                    action_href="/upload",
+                ),
+            )
+            return
+        self._redirect("/upload?deleted=1")
+
+    def _handle_plan_csv(self) -> None:
+        account = self._require_account("/plan", close=True)
+        if account is None:
+            return
+        if not self._same_origin():
+            self._blocked_request(
+                "Export the plan from this dashboard's own form.",
+                "/plan",
+                "Back to the money plan",
+            )
+            return
+        try:
+            body = self._read_plan_body()
+            form = parse_form(self.headers.get("Content-Type", ""), body)
+        except PlanRequestError as error:
+            self._send(
+                error.status,
+                _error_document(
+                    "Plan not accepted",
+                    str(error),
+                    action_href="/plan",
+                    action_label="Back to the money plan",
+                    eyebrow="Money plan",
+                ),
+            )
+            return
+        category_rows = _form_row_count(
+            form, "category_rows", default=CATEGORY_ROWS, maximum=MAX_CATEGORIES
+        )
+        spending_rows = _form_row_count(
+            form, "spending_rows", default=SPENDING_ROWS, maximum=MAX_SPENDINGS
+        )
+        draft = read_draft(
+            form, category_rows=category_rows, spending_rows=spending_rows
+        )
+        plan, errors = validate_draft(draft)
+        if plan is None:
+            self._send(
+                HTTPStatus.UNPROCESSABLE_ENTITY,
+                render_plan_page(
+                    draft=draft,
+                    errors=errors,
+                    category_rows=category_rows,
+                    spending_rows=spending_rows,
+                    account=account,
+                ),
+            )
+            return
+        analysis = analyse(plan, recorded_at=datetime.now().astimezone())
+        filename = (
+            f"plan-it-{plan.period}-{analysis.recorded_at.strftime('%Y-%m-%d')}.csv"
+        )
+        self._send(
+            HTTPStatus.OK,
+            render_plan_csv(plan, analysis),
+            headers=[("Content-Disposition", f'attachment; filename="{filename}"')],
+            content_type="text/csv; charset=utf-8",
+        )
 
     def _handle_logout(self) -> None:
         if not self._same_origin():
@@ -3522,7 +4255,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if token:
             self.server.accounts.delete_session(token)
         self._redirect(
-            "/login?signedout=1", headers=[_cleared_cookie()], close=True
+            "/login?signedout=1",
+            headers=[_cleared_cookie(secure=self.server.secure_cookies)],
+            close=True,
         )
 
     def _create_plan(self) -> None:
@@ -3692,7 +4427,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             content_type = self.headers.get("Content-Type", "")
             bundle = parse_upload(content_type, body)
             title = bundle.title
-            analysis = create_analysis(bundle)
+            analysis = create_analysis(bundle, account_id=account.account_id)
         except PipelineFailure as error:
             logger.warning("analysis pipeline failed: %s", error)
             self._upload_error(422, [str(error)], title=title, account=account)
@@ -3726,7 +4461,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
         account: Account | None = None,
     ) -> None:
         body = render_upload_page(
-            analyses=list_analyses(),
+            analyses=list_analyses(
+                account_id=account.account_id if account is not None else None
+            ),
             errors=errors,
             title=title,
             account=account,
@@ -3755,31 +4492,38 @@ class DashboardHandler(BaseHTTPRequestHandler):
         return body
 
     def _same_origin(self) -> bool:
-        if self.headers.get("Sec-Fetch-Site") == "cross-site":
+        site = self.headers.get("Sec-Fetch-Site", "").strip().lower()
+        if site == "cross-site":
             return False
-        origin = self.headers.get("Origin")
-        if not origin:
-            return True
         host = self.headers.get("Host", "")
         if not host:
             return False
-        parsed = urllib.parse.urlsplit(origin)
-        return (
-            parsed.scheme in {"http", "https"}
-            and parsed.netloc.lower() == host.lower()
-        )
+        origin = self.headers.get("Origin")
+        if origin:
+            parsed = urllib.parse.urlsplit(origin)
+            return (
+                parsed.scheme in {"http", "https"}
+                and parsed.netloc.lower() == host.lower()
+            )
+        # Browsers send Origin on form POSTs. Sec-Fetch-Site is the fallback;
+        # a state-changing request with neither header is refused.
+        return site == "same-origin"
 
     def _requested_analysis(
-        self, query: dict[str, list[str]]
+        self, query: dict[str, list[str]], account: Account | None
     ) -> tuple[AnalysisWorkspace | None, str | None]:
         requested = _first(query, "analysis")
         if not requested:
             return None, None
         analysis = workspace_for(requested)
-        if analysis is None:
+        if (
+            analysis is None
+            or account is None
+            or analysis.account_id != account.account_id
+        ):
             return None, (
-                "That analysis is not available. It may have been removed or may not "
-                "have finished loading."
+                "That analysis is not available. It may have been removed, or it "
+                "may belong to another account."
             )
         return analysis, None
 
@@ -3816,6 +4560,16 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self._signup_page(query, head_only=head_only)
             elif path == "/welcome":
                 self._welcome_page(query, head_only=head_only)
+            elif path == "/account":
+                self._account_page(query, head_only=head_only)
+            elif path == "/reset":
+                self._reset_page(query, head_only=head_only)
+            elif path == "/privacy":
+                self._legal_page("Privacy notice", legal.privacy_body(), head_only=head_only)
+            elif path == "/terms":
+                self._legal_page("Terms of use", legal.terms_body(), head_only=head_only)
+            elif path == "/delete-analysis":
+                self._delete_analysis_page(query, head_only=head_only)
             elif path == "/upload":
                 self._upload_page(query, head_only=head_only)
             elif path == "/plan":
@@ -3865,7 +4619,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
         return connect_readonly(db_path or self.server.db_path)
 
     def _page(self, query: dict[str, list[str]], *, head_only: bool) -> None:
-        analysis, error = self._requested_analysis(query)
+        account = self._current_account()
+        analysis, error = self._requested_analysis(query, account)
         if error:
             self._send(
                 HTTPStatus.NOT_FOUND,
@@ -3882,14 +4637,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 query,
                 report_available=report_path.is_file(),
                 analysis=analysis,
-                account=self._current_account(),
+                account=account,
             )
         finally:
             connection.close()
         self._send(HTTPStatus.OK, body, head_only=head_only)
 
     def _export(self, query: dict[str, list[str]], *, head_only: bool) -> None:
-        analysis, error = self._requested_analysis(query)
+        analysis, error = self._requested_analysis(query, self._current_account())
         if error:
             self._send(
                 HTTPStatus.NOT_FOUND,
@@ -3926,7 +4681,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
     def _report(
         self, query: dict[str, list[str]], *, head_only: bool
     ) -> None:
-        analysis, error = self._requested_analysis(query)
+        analysis, error = self._requested_analysis(query, self._current_account())
         if error:
             self._send(
                 HTTPStatus.NOT_FOUND,
@@ -3954,6 +4709,7 @@ def create_server(
     port: int = 0,
     report_path: Path | str | None = None,
     accounts_path: Path | str | None = None,
+    secure_cookies: bool = False,
 ) -> DashboardServer:
     db_path = Path(db_path)
     if not db_path.is_file():
@@ -3965,6 +4721,7 @@ def create_server(
         db_path=db_path,
         report_path=Path(report_path),
         accounts_path=accounts_path,
+        secure_cookies=secure_cookies,
     )
 
 
@@ -3982,6 +4739,7 @@ def serve(
     port: int = 8000,
     open_browser: bool = False,
     accounts_path: Path | str | None = None,
+    secure_cookies: bool = False,
 ) -> int:
     """Start the dashboard and block until Ctrl+C. Returns a process exit code."""
     db_path = Path(db_path)
@@ -4006,7 +4764,11 @@ def serve(
 
     try:
         server = create_server(
-            db_path, host=host, port=port, accounts_path=accounts_path
+            db_path,
+            host=host,
+            port=port,
+            accounts_path=accounts_path,
+            secure_cookies=secure_cookies,
         )
     except OSError as error:
         print(f"Could not start the dashboard on {host}:{port}: {error}")
@@ -4026,6 +4788,8 @@ def serve(
     print("  synthetic data only; press Ctrl+C to stop")
     if host not in ("127.0.0.1", "localhost", "::1"):
         print("  warning: bound beyond loopback; demo accounts are not internet-grade")
+    if secure_cookies:
+        print("  secure cookies: on (serve behind HTTPS, or sign-in will not persist)")
     print()
 
     if open_browser:
