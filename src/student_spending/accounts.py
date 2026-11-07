@@ -1,4 +1,4 @@
-"""Local demo accounts for the money planner and upload workspace.
+"""Local accounts for the money planner and upload workspace.
 
 Passwords are hashed with scrypt before they touch disk and sessions are
 opaque random tokens; the database stores only a SHA-256 digest of each token.
@@ -20,6 +20,7 @@ from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from pathlib import Path
 
+from . import config
 from .legal import POLICY_VERSION
 
 SESSION_COOKIE = "ssa_session"
@@ -51,6 +52,7 @@ CREATE TABLE IF NOT EXISTS accounts (
 CREATE TABLE IF NOT EXISTS sessions (
     token_hash TEXT PRIMARY KEY,
     account_id INTEGER NOT NULL REFERENCES accounts(account_id) ON DELETE CASCADE,
+    csrf_token TEXT,
     created_at TEXT NOT NULL,
     expires_at TEXT NOT NULL
 );
@@ -99,7 +101,7 @@ def validate_display_name(value: str) -> str:
 def validate_email(value: str) -> str:
     email = normalise_email(value)
     if not email:
-        raise AccountError("Enter an email address for this demo account.")
+        raise AccountError("Enter an email address for this account.")
     if len(email) > MAX_EMAIL_LENGTH or not _EMAIL_PATTERN.match(email):
         raise AccountError("That email address does not look valid.")
     return email
@@ -164,7 +166,7 @@ def verify_password(password: str, encoded: str) -> bool:
 @lru_cache(maxsize=1)
 def _dummy_hash() -> str:
     """A real hash used to spend the same time on unknown accounts."""
-    return hash_password("demo-placeholder-password-1")
+    return hash_password("placeholder-password-0001")
 
 
 def _now() -> datetime:
@@ -217,8 +219,9 @@ class AccountStore:
 
     def __init__(self, path: Path | str):
         self.path = Path(path)
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+        config.ensure_private_dir(self.path.parent)
         self._ensure_schema()
+        config.restrict_file(self.path)
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.path, timeout=10)
@@ -244,6 +247,12 @@ class AccountStore:
                     connection.execute(
                         f"ALTER TABLE accounts ADD COLUMN {definition}"
                     )
+            session_columns = {
+                str(row[1])
+                for row in connection.execute("PRAGMA table_info(sessions)")
+            }
+            if "csrf_token" not in session_columns:
+                connection.execute("ALTER TABLE sessions ADD COLUMN csrf_token TEXT")
             connection.commit()
         finally:
             connection.close()
@@ -315,6 +324,7 @@ class AccountStore:
 
     def create_session(self, account_id: int) -> str:
         token = secrets.token_urlsafe(32)
+        csrf = secrets.token_urlsafe(32)
         created = _now()
         expires = created + timedelta(seconds=SESSION_SECONDS)
         connection = self._connect()
@@ -324,11 +334,12 @@ class AccountStore:
                     "DELETE FROM sessions WHERE expires_at <= ?", (_stamp(created),)
                 )
                 connection.execute(
-                    "INSERT INTO sessions (token_hash, account_id, created_at, expires_at) "
-                    "VALUES (?, ?, ?, ?)",
+                    "INSERT INTO sessions (token_hash, account_id, csrf_token, "
+                    "created_at, expires_at) VALUES (?, ?, ?, ?, ?)",
                     (
                         _token_digest(token),
                         account_id,
+                        csrf,
                         _stamp(created),
                         _stamp(expires),
                     ),
@@ -336,6 +347,32 @@ class AccountStore:
         finally:
             connection.close()
         return token
+
+    def csrf_for_token(self, token: str) -> str:
+        """Return the CSRF token bound to a live session, creating one if needed."""
+        if not 20 <= len(token) <= 200:
+            return ""
+        now = _stamp(_now())
+        digest = _token_digest(token)
+        connection = self._connect()
+        try:
+            row = connection.execute(
+                "SELECT csrf_token FROM sessions WHERE token_hash = ? AND expires_at > ?",
+                (digest, now),
+            ).fetchone()
+            if row is None:
+                return ""
+            if row["csrf_token"]:
+                return str(row["csrf_token"])
+            csrf = secrets.token_urlsafe(32)
+            with connection:
+                connection.execute(
+                    "UPDATE sessions SET csrf_token = ? WHERE token_hash = ?",
+                    (csrf, digest),
+                )
+            return csrf
+        finally:
+            connection.close()
 
     def account_for_token(self, token: str) -> Account | None:
         if not 20 <= len(token) <= 200:

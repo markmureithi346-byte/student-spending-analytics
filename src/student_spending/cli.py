@@ -259,8 +259,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     serve_parser.add_argument(
         "--host",
-        default="127.0.0.1",
-        help="interface to bind (default: 127.0.0.1, loopback only)",
+        default=config.HOST,
+        help="interface to bind (default: PLANIT_HOST, otherwise 127.0.0.1)",
     )
     serve_parser.add_argument(
         "--port",
@@ -276,9 +276,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     serve_parser.add_argument(
         "--secure-cookies",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
+        default=None,
         dest="secure_cookies",
-        help="mark the session cookie Secure and send HSTS (serve behind HTTPS)",
+        help="mark the session cookie Secure and send HSTS (default: "
+        "PLANIT_SECURE_COOKIES, on in production)",
     )
     prune_parser = commands.add_parser(
         "prune-uploads",

@@ -95,7 +95,7 @@ class PlanDraft:
     method_note: str = ""
     categories: tuple[CategoryDraft, ...] = ()
     spendings: tuple[SpendingDraft, ...] = ()
-    synthetic: bool = False
+    advice_ack: bool = False
 
     def category(self, number: int) -> CategoryDraft:
         return (
@@ -258,7 +258,7 @@ def read_draft(
             )
             for number in spending_numbers
         ),
-        synthetic=_first(form, "synthetic").lower() in {"yes", "on", "true", "1"},
+        advice_ack=_first(form, "advice_ack").lower() in {"yes", "on", "true", "1"},
     )
 
 
@@ -393,9 +393,10 @@ def validate_draft(draft: PlanDraft) -> tuple[MoneyPlan | None, list[str]]:
     elif len(spendings) > MAX_SPENDINGS:
         errors.append(f"Use no more than {MAX_SPENDINGS} spending entries.")
 
-    if not draft.synthetic:
+    if not draft.advice_ack:
         errors.append(
-            "Confirm that the numbers are made up before running the analysis."
+            "Confirm that you understand Plan It is a planning tool, not "
+            "financial advice, before running the analysis."
         )
 
     if errors:

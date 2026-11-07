@@ -25,13 +25,14 @@ useful to whoever maintains this project next — including future me.
 | 15. Single-file upload | done | one transactions CSV, derived students, budget variance skipped, 95 tests |
 | 16. Per-student money plan | done | `personal.py`, `/plan`, user-defined categories, add-row controls, analysis rendered in-page without saved plans |
 | 17. Exact shares, receipt and dark theme | done | largest-remainder shares in the planner, dashboard and report, inline printable receipt placed directly under the analysis, drifting-spark dark-purple backdrop, 138 tests, browser-checked at 1440 px and 390 px |
-| 18. Local demo accounts | done | `accounts.py`, `/signup`, `/login`, `/logout`, scrypt hashes, hashed session tokens, gated `/plan` and `/upload` with the sample dashboard still public, 157 tests, browser-checked at 1440 px, 1280 px and 390 px |
+| 18. Local accounts | done | `accounts.py`, `/signup`, `/login`, `/logout`, scrypt hashes, hashed session tokens, gated `/plan` and `/upload` with the sample dashboard still public, 157 tests, browser-checked at 1440 px, 1280 px and 390 px |
 | 19. Sign-in loading screen and button motion | done | authenticated `/welcome` with an animated tick, rings and progress bar, `meta refresh` hand-off after 2.6 s, CSS-only button hover/press/sheen across the platform, reduced-motion and phone fallbacks, 158 tests, browser-checked at 1440 px and 390 px with the redirect confirmed |
 | 20. Plan It brand on the loading screen | done | packaged `plan-it-logo.jpg` served from `/assets/`, `img-src 'self' data:`, wordmark and slogan on `/welcome`, 13-second linear countdown, animated logo tile and rings, 158 tests, browser-checked at 1440 px and 390 px with a measured 13.2-second redirect |
 | 21. Bottom add-row controls | done | **+** bars under both planner lists, `#categories-end`/`#spending-end` anchors, `scroll-margin-top` landing the new row and control in view, `scroll-behavior: auto` on served pages so the landing is instant, a 0.26 s `row-pop` on only the new row, draft preserved through the no-save round-trip, 158 tests, 26 browser checks at 1280 px plus a 390 px phone pass and a reduced-motion pass, measured at about 250–650 ms per add |
 | 22. Device time instead of typed dates | done | date field and column removed from spending rows, submission time from `datetime.now().astimezone()` stored on the analysis, **Recorded** stamp in the entries summary, receipt meta and code line, daily average replaced by average per spending row, 160 tests, 10 browser checks at 1280 px, phone and reduced-motion passes unchanged |
 | 23. Weekly/monthly period, suggestions and local coach | done | `period` select stored on the plan and used only in wording, `coach.py` with up to five grounded suggestion cards and a deterministic question router, coach form carrying a hidden plan snapshot, answers rendered in the same page with no redirect, escaped question text, 187 tests, 29 browser checks at 1280 px and 390 px including a weekly submission |
 | 24. Completion, security and cleanup pass | done | superseded the `/welcome` delay with a direct redirect (the URL remains a compatibility redirect), raised passwords to 10 characters, added `/account` consent, recovery-code reset, password change, JSON export and account deletion, scoped uploads to their owner with a delete page, added the 80% plan alert and plan CSV export, strict same-origin checks, extra security headers, opt-in secure cookies, `prune-uploads`, draft privacy/terms, `docs/COMPLIANCE.md`, `THIRD_PARTY_LICENSES.md`, 205 tests |
+| 25. Production readiness for a public HTTPS host | done | environment-driven production guard, per-session CSRF tokens, `/healthz`, proxy-aware rate limiting, configurable legal pages, private file permissions, packaged schema, Caddy/nginx examples, systemd unit and pruning timer, online backup script, deployment runbook, 218 tests |
 
 ## Decisions worth remembering
 
@@ -151,13 +152,14 @@ useful to whoever maintains this project next — including future me.
 - **Accounts gate the personal tools; they do not own the showcase.** The sample dashboard
   and report stay public because they are the project's portfolio, while `/plan` and
   `/upload` ask for a session because they represent one student's workspace. Gating
-  everything would have hidden the demo behind a form; gating nothing would have made the
-  new sign-in pages decorative.
+  everything would have hidden the personal tools behind a form; gating nothing would have
+  made the new sign-in pages decorative.
 - **Passwords are hashed, sessions are hashed, and neither is reversible.** `hashlib.scrypt`
   with a per-account random salt makes the stored value useless without the password, and
   `hmac.compare_digest` avoids a timing oracle. The cookie carries a random token while
   SQLite stores only its SHA-256 digest, so reading `data/accounts.db` does not hand out
-  live sessions. There is no secret key to configure, which suits a zero-dependency demo.
+  live sessions. There is no secret key to configure, which suits a zero-dependency
+  learning project.
 - **Login errors are deliberately vague.** One message covers an unknown email, a wrong
   password and a missing account, and an unknown email is still verified against a cached
   dummy hash. The point is to avoid becoming an account-enumeration oracle, not to be
@@ -212,12 +214,32 @@ useful to whoever maintains this project next — including future me.
   reduced-motion query disables the pop. Smooth scrolling stays on the static report,
   where it is only ever used for in-page links.
 - **One submission timestamp replaces a date on every spending row.** With no JavaScript
-  the form cannot ask the browser for its clock, but `/plan` is served from the user's own
-  machine on loopback, so `datetime.now().astimezone()` at POST time *is* the device
-  clock. One stamp removes a field from up to 100 rows, still puts a real time on the
-  receipt, and avoids asking students to invent dates. The daily average depended on the
-  per-row dates, so it was replaced with an honest average per spending row instead of
-  inventing a period.
+  the form cannot ask the browser for its clock, so the server stamps the request with
+  `datetime.now().astimezone()`. On the original single-computer deployment that was the
+  device clock; on a hosted instance it is the server clock in the server's timezone, and
+  the runbook says so rather than promising a client time the code cannot read. One stamp
+  removes a field from up to 100 rows, still puts a real time on the receipt, and avoids
+  asking students to invent dates. The daily average depended on the per-row dates, so it
+  was replaced with an honest average per spending row instead of inventing a period.
+- **Origin checks are not CSRF tokens.** `Origin` and `Sec-Fetch-Site` reject obvious
+  cross-site posts, but they are browser-supplied hints and do not bind a form to a
+  session. A per-session token stored in `sessions.csrf_token`, rendered as a hidden field
+  and compared with `hmac.compare_digest` closes the gap; the old header checks stay as
+  defence in depth. Login and sign-up keep only the header checks because no session
+  exists yet.
+- **Fail closed on production configuration.** A public service with an HTTP cookie,
+  placeholder legal text or no operator identity is worse than a service that will not
+  start. `serve` lists every missing `PLANIT_*` value and exits with code `2`; the guard is
+  a checklist, not a claim that the values are legally sufficient.
+- **Trust a proxy header only when the proxy overwrites it.** `X-Forwarded-For` is
+  user-controlled unless the proxy replaces it. The Caddy and nginx examples overwrite the
+  header, and `PLANIT_TRUST_PROXY` stays off by default so a direct client cannot choose
+  its own rate-limit bucket.
+- **File permissions belong to the data, not the deployment.** Uploaded CSVs, metadata and
+  warehouses are written owner-only by the application; the systemd unit adds
+  `UMask=0077`. A backup is only as private as the copy destination, so
+  `scripts/backup_planit.py` says plainly that its output is plaintext and must be
+  encrypted off-server.
 
 ## Bugs hit during development
 
@@ -584,8 +606,12 @@ priority cap that keeps advice focused instead of dumping every rule at once.
 - Is a calendar-week grain enough, or is a real date dimension needed for reporting?
 - Should the dashboard remember a preferred date range, and if so, where — URL, cookie
   or warehouse table?
-- If this ever held real data, what authentication and access logging would be required
-  before any route left loopback?
+- What audit trail should the operator keep for privileged access to uploaded analyses
+  and backups, and how long should it be retained?
+- At what user count does SQLite on one host stop being the honest choice, and what would
+  a migration to a client-server database cost?
+- Should uploads be processed in a background queue so a large CSV does not hold the HTTP
+  request open?
 - Should the planner offer an explicit "download this analysis" action, or is the browser
   print/save flow enough for a worksheet that deliberately stores nothing?
 - Should the planner support more than one currency, or is KES-only the honest scope for

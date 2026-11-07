@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily Plan It backup snapshot
+
+[Timer]
+OnCalendar=*-*-* 02:30:00
+Persistent=true
+RandomizedDelaySec=15m
+
+[Install]
+WantedBy=timers.target

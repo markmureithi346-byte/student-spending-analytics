@@ -26,7 +26,7 @@ class PasswordHashingTests(unittest.TestCase):
 
 class ValidationTests(unittest.TestCase):
     def test_display_name_is_tidied_and_bounded(self) -> None:
-        self.assertEqual(accounts.validate_display_name("  Amina   Demo "), "Amina Demo")
+        self.assertEqual(accounts.validate_display_name("  Amina   Wanjiku "), "Amina Wanjiku")
         for bad in ("", "A", "x" * (accounts.MAX_DISPLAY_NAME_LENGTH + 1)):
             with self.subTest(value=bad):
                 with self.assertRaises(accounts.AccountError):
@@ -65,23 +65,23 @@ class AccountStoreTests(unittest.TestCase):
         self._tmp.cleanup()
 
     def test_create_and_authenticate_ignores_email_case(self) -> None:
-        created = self.store.create_account("Amina Demo", "Amina@Example.test", "synthetic1")
+        created = self.store.create_account("Amina Wanjiku", "Amina@Example.test", "synthetic1")
         self.assertEqual(created.email, "amina@example.test")
         found = self.store.authenticate("AMINA@example.test", "synthetic1")
         self.assertIsNotNone(found)
         assert found is not None
         self.assertEqual(found.account_id, created.account_id)
-        self.assertEqual(found.display_name, "Amina Demo")
+        self.assertEqual(found.display_name, "Amina Wanjiku")
         self.assertIsNone(self.store.authenticate("amina@example.test", "wrongpass1"))
         self.assertIsNone(self.store.authenticate("other@example.test", "synthetic1"))
 
     def test_duplicate_email_is_refused(self) -> None:
-        self.store.create_account("Amina Demo", "amina@example.test", "synthetic1")
+        self.store.create_account("Amina Wanjiku", "amina@example.test", "synthetic1")
         with self.assertRaises(accounts.AccountError):
             self.store.create_account("Other Student", "AMINA@example.test", "synthetic1")
 
     def test_sessions_lookup_and_delete(self) -> None:
-        account = self.store.create_account("Amina Demo", "amina@example.test", "synthetic1")
+        account = self.store.create_account("Amina Wanjiku", "amina@example.test", "synthetic1")
         token = self.store.create_session(account.account_id)
         self.assertGreaterEqual(len(token), 40)
         found = self.store.account_for_token(token)
@@ -95,7 +95,7 @@ class AccountStoreTests(unittest.TestCase):
         self.assertIsNone(self.store.account_for_token(token))
 
     def test_expired_sessions_are_not_returned(self) -> None:
-        account = self.store.create_account("Amina Demo", "amina@example.test", "synthetic1")
+        account = self.store.create_account("Amina Wanjiku", "amina@example.test", "synthetic1")
         token = self.store.create_session(account.account_id)
         connection = sqlite3.connect(self.store.path)
         try:
@@ -109,7 +109,7 @@ class AccountStoreTests(unittest.TestCase):
 
     def test_consent_records_the_policy_version(self) -> None:
         created = self.store.create_account(
-            "Amina Demo", "amina@example.test", "synthetic1", consented=True
+            "Amina Wanjiku", "amina@example.test", "synthetic1", consented=True
         )
         self.assertIsNotNone(created.consent_at)
         self.assertEqual(created.policy_version, accounts.POLICY_VERSION)
@@ -126,7 +126,7 @@ class AccountStoreTests(unittest.TestCase):
 
     def test_recovery_code_is_stored_as_a_digest_and_is_single_use(self) -> None:
         account = self.store.create_account(
-            "Amina Demo", "amina@example.test", "synthetic1"
+            "Amina Wanjiku", "amina@example.test", "synthetic1"
         )
         self.assertIsNone(self.store.generate_recovery_code(account.account_id, "wrongpass1"))
         code = self.store.generate_recovery_code(account.account_id, "synthetic1")
@@ -159,7 +159,7 @@ class AccountStoreTests(unittest.TestCase):
 
     def test_change_password_requires_current_and_ends_sessions(self) -> None:
         account = self.store.create_account(
-            "Amina Demo", "amina@example.test", "synthetic1"
+            "Amina Wanjiku", "amina@example.test", "synthetic1"
         )
         token = self.store.create_session(account.account_id)
         self.assertFalse(
@@ -176,7 +176,7 @@ class AccountStoreTests(unittest.TestCase):
 
     def test_delete_account_removes_sessions_and_the_record(self) -> None:
         account = self.store.create_account(
-            "Amina Demo", "amina@example.test", "synthetic1"
+            "Amina Wanjiku", "amina@example.test", "synthetic1"
         )
         token = self.store.create_session(account.account_id)
         self.assertTrue(self.store.delete_account(account.account_id))

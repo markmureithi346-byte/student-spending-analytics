@@ -1,0 +1,19 @@
+[Unit]
+Description=Prune Plan It uploads older than the retention period
+
+[Service]
+Type=oneshot
+User=planit
+Group=planit
+WorkingDirectory=/opt/plan-it
+EnvironmentFile=/etc/plan-it/plan-it.env
+ExecStart=/opt/plan-it/.venv/bin/student-spending prune-uploads --apply --days 30
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/plan-it
+
+[Install]
+WantedBy=multi-user.target

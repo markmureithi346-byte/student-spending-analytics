@@ -67,6 +67,7 @@ class UploadedCsv:
 class UploadBundle:
     title: str
     files: dict[str, UploadedCsv]
+    csrf: str = ""
 
 
 @dataclass(frozen=True)
@@ -119,7 +120,8 @@ def parse_upload(content_type: str, body: bytes) -> UploadBundle:
     files: dict[str, UploadedCsv] = {}
     seen: set[str] = set()
     title = ""
-    synthetic = False
+    authorised = False
+    csrf = ""
 
     for part in parts:
         if part.is_multipart():
@@ -158,23 +160,26 @@ def parse_upload(content_type: str, body: bytes) -> UploadBundle:
                 raise UploadError(
                     f"The analysis title must be {MAX_TITLE_LENGTH} characters or fewer."
                 )
-        elif field == "synthetic":
-            synthetic = _decode_text(payload, "Synthetic confirmation").strip().lower() in {
+        elif field == "authorised":
+            authorised = _decode_text(payload, "Authorisation").strip().lower() in {
                 "yes",
                 "on",
                 "true",
             }
+        elif field == "csrf":
+            csrf = _decode_text(payload, "Security token").strip()
         else:
             raise UploadError(f"Unexpected field {field!r} in the upload form.")
 
     missing = [FILE_FIELDS[field][0] for field in FILE_FIELDS if field not in files]
     if missing:
         raise UploadError("Add the missing file(s): " + ", ".join(missing) + ".")
-    if not synthetic:
+    if not authorised:
         raise UploadError(
-            "Confirm that the file contains only synthetic data before running analysis."
+            "Confirm that you have the right to process this file before running "
+            "analysis."
         )
-    return UploadBundle(title=title, files=files)
+    return UploadBundle(title=title, files=files, csrf=csrf)
 
 
 def create_analysis(
@@ -194,10 +199,13 @@ def create_analysis(
 
     try:
         data_root.mkdir(parents=True, exist_ok=False)
-        db_path.parent.mkdir(parents=True, exist_ok=True)
-        report_dir.mkdir(parents=True, exist_ok=True)
+        config.ensure_private_dir(data_root)
+        config.ensure_private_dir(db_path.parent)
+        config.ensure_private_dir(report_dir)
         for field, info in FILE_FIELDS.items():
-            (data_root / info[2]).write_bytes(bundle.files[field].payload)
+            uploaded = data_root / info[2]
+            uploaded.write_bytes(bundle.files[field].payload)
+            config.restrict_file(uploaded)
 
         from .cli import PipelineOptions, run_pipeline
 
@@ -252,7 +260,10 @@ def create_analysis(
         temporary.write_text(
             json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8"
         )
+        config.restrict_file(temporary)
         temporary.replace(data_root / "metadata.json")
+        config.restrict_file(data_root / "metadata.json")
+        config.restrict_file(db_path)
 
         logger.info(
             "analysis %s built with exit %d (%d accepted, %d flagged checks)",

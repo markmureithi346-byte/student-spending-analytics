@@ -1,0 +1,26 @@
+# Plan It behind Caddy (automatic HTTPS). Replace planit.example.com.
+# Caddy must be the only public listener; the app binds 127.0.0.1:8000.
+planit.example.com {
+	encode zstd gzip
+
+	# The app accepts one 2 MB CSV in a form no larger than 3 MB.
+	request_body {
+		max_size 4MB
+	}
+
+	reverse_proxy 127.0.0.1:8000 {
+		# Overwrite, do not append: the app trusts this header when
+		# PLANIT_TRUST_PROXY=1, so an attacker must not be able to set it.
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Forwarded-Proto {scheme}
+	}
+
+	header {
+		-Server
+	}
+
+	log {
+		output file /var/log/caddy/planit-access.log
+		format json
+	}
+}

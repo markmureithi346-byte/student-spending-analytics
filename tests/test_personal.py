@@ -29,7 +29,7 @@ def plan_form(
         ("Fun", "1800", "Concert"),
         ("Books", "200", "Notebook"),
     ),
-    synthetic: bool = True,
+    advice_ack: bool = True,
 ) -> dict[str, list[str]]:
     form: dict[str, list[str]] = {
         "student_name": [name],
@@ -46,8 +46,8 @@ def plan_form(
         form[f"spending_category_{number}"] = [category]
         form[f"spending_amount_{number}"] = [amount]
         form[f"spending_note_{number}"] = [entry_note]
-    if synthetic:
-        form["synthetic"] = ["yes"]
+    if advice_ack:
+        form["advice_ack"] = ["yes"]
     return form
 
 
@@ -107,7 +107,8 @@ class ValidationTests(unittest.TestCase):
             ({"money": "ten"}, "must be a number"),
             ({"name": ""}, "Add a display name"),
             ({"method": "magic"}, "Choose a budgeting method"),
-            ({"synthetic": False}, "Confirm that the numbers are made up"),
+            ({"advice_ack": False},
+             "Confirm that you understand Plan It is a planning tool"),
         ]
         for kwargs, message in cases:
             with self.subTest(kwargs=kwargs):
@@ -192,7 +193,7 @@ class ValidationTests(unittest.TestCase):
         draft = personal.read_draft(plan_form(name="  Amina  ", money="bad"))
         self.assertEqual(draft.student_name, "  Amina  ")
         self.assertEqual(draft.money_available, "bad")
-        self.assertTrue(draft.synthetic)
+        self.assertTrue(draft.advice_ack)
         self.assertEqual(draft.category(1).name, "Rent")
 
 
@@ -433,7 +434,7 @@ class CoachTests(unittest.TestCase):
 
 class FormParsingTests(unittest.TestCase):
     def test_parse_form_accepts_urlencoded_body(self) -> None:
-        body = b"student_name=Amina&money_available=14%2C000&synthetic=yes"
+        body = b"student_name=Amina&money_available=14%2C000&advice_ack=yes"
         parsed = personal.parse_form("application/x-www-form-urlencoded", body)
         self.assertEqual(parsed["student_name"], ["Amina"])
         self.assertEqual(parsed["money_available"], ["14,000"])

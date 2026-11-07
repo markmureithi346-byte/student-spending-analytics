@@ -4,6 +4,67 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.0] - 2026-11-07
+
+Makes the platform deployable on a public HTTPS host for real personal data while
+keeping the standard-library runtime and the single-host SQLite design. The sample
+warehouse, dashboard and report remain synthetic; a signed-in user can upload their own
+CSV into an isolated workspace.
+
+### Added
+
+- **Production configuration guard.** `PLANIT_ENV=production` plus environment settings
+  for the public URL, bind address, secure cookies, trusted proxy, storage paths and
+  operator/legal details. `serve` refuses to start and lists every gap until the public
+  `https://` URL, secure cookies, legal review and required operator values are supplied.
+- **Per-session CSRF tokens.** Every authenticated state-changing form carries a token
+  bound to the session and stored in `sessions.csrf_token`; missing or wrong tokens return
+  `403`. Origin and `Sec-Fetch-Site` checks remain in place for unauthenticated forms.
+- **`GET /healthz`.** Returns JSON with the app version and warehouse/accounts checks,
+  `200` when healthy and `503` when degraded.
+- **Proxy-aware rate limiting.** With `PLANIT_TRUST_PROXY=1`, the first `X-Forwarded-For`
+  address is used (validated as an IP) so a proxy does not collapse every user into one
+  rate-limit bucket. It stays off by default.
+- **Deployment assets.** `deploy/Caddyfile`, `deploy/nginx.conf`, a sandboxed
+  `plan-it.service`, daily `plan-it-prune` and `plan-it-backup` timers,
+  `.env.example` production settings and `docs/DEPLOYMENT.md` covering TLS, firewall,
+  backups, restore, upgrades and incident response.
+- **`scripts/backup_planit.py`.** An online snapshot of the accounts database, sample
+  warehouse, every uploaded warehouse and the upload/report trees using the SQLite backup
+  API. The output is plaintext and must be encrypted before leaving the server.
+- **Packaged schema.** `src/student_spending/schema.sql` ships with the wheel and is kept
+  byte-identical to `sql/schema.sql` by a test.
+
+### Changed
+
+- **Legal pages are configuration-driven.** Operator name, address, privacy email, ODPC
+  registration, hosting provider, effective date, retention periods, liability cap,
+  age-assurance and trademark wording are filled from `PLANIT_*` values. A Draft banner
+  remains until `PLANIT_LEGAL_REVIEWED=1`, and production refuses to start without it.
+- **Real-data copy.** Sign-up, upload, planner, account and coach copy now asks users to
+  use their own details, states that uploaded datasets stay on the operator's server and
+  warns against entering card, bank or mobile-money credentials. The committed sample
+  dashboard still says Synthetic data.
+- **Upload confirmation** now asks the submitter to confirm they have the right to
+  process the file (`authorised`) rather than confirming the data is fake. The planner
+  uses a matching `advice_ack` confirmation that it is a planning tool, not financial
+  advice.
+- **Private file permissions.** Uploaded CSVs, analysis metadata, uploaded warehouses and
+  reports are written with owner-only permissions where the platform supports it.
+- **Secure cookies in production.** `PLANIT_SECURE_COOKIES` defaults to on in production;
+  the `--secure-cookies/--no-secure-cookies` flag can still override it.
+- The test suite is now 218 cases, including a production module for the startup guard,
+  legal filling, trusted-proxy handling, `/healthz`, schema parity and backups.
+
+### Security
+
+- Production startup fails closed rather than serving an HTTP cookie, placeholder legal
+  text or an unregistered operator.
+- CSRF tokens close the gap left by relying only on browser origin headers.
+- Deployment files cap request bodies at 4 MB, bind the app to loopback, overwrite
+  `X-Forwarded-For`, set HSTS on nginx, and run the service under a restrictive systemd
+  sandbox.
+
 ## [3.0.0] - 2026-11-07
 
 Finishes, secures and cleans the personal tools: accounts gain recovery, consent,
@@ -290,16 +351,16 @@ Release version is now `2.4.0`; the suite is 158 tests.
 
 ## [2.3.0] - 2026-10-29
 
-Adds local demo accounts, so the money planner and the CSV upload sit behind a sign-in
+Adds local accounts, so the money planner and the CSV upload sit behind a sign-in
 without any external identity service or real credentials.
 
 ### Added
 
-- `/signup` creates a local demo account from a display name, a made-up email and a
+- `/signup` creates a local account from a display name, a made-up email and a
   password, then signs the visitor in and returns them to the page they asked for.
 - `/login` and `/logout`. Sessions last eight hours, are stored in `data/accounts.db`
   beside the warehouse, and are deleted on sign-out.
-- An account bar on every page: **Demo mode · sample dashboard** with **Sign in** and
+- An account bar on every page: **Sample dashboard · public data** with **Sign in** and
   **Create account** links when signed out, the display name and a **Sign out** button
   when signed in.
 - `accounts.py`: scrypt password hashing (N=16384, r=8, p=1, random 16-byte salt),
@@ -319,7 +380,7 @@ without any external identity service or real credentials.
   size-limited to 16 KB.
 - Sign-up errors preserve the display name and email but never re-render a password.
 - `serve` prints the accounts database path and warns when it is bound beyond loopback,
-  because demo accounts are not internet-grade.
+  because local accounts are not internet-grade.
 - Planner, upload and footer copy no longer claims there is no login; the planner says
   the account only unlocks the form and that the plan itself is still not saved.
 

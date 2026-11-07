@@ -1,0 +1,19 @@
+[Unit]
+Description=Snapshot Plan It data for backup
+
+[Service]
+Type=oneshot
+User=planit
+Group=planit
+WorkingDirectory=/opt/plan-it
+EnvironmentFile=/etc/plan-it/plan-it.env
+ExecStart=/opt/plan-it/.venv/bin/python /opt/plan-it/scripts/backup_planit.py --dest /var/backups/plan-it
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/plan-it /var/backups/plan-it
+
+[Install]
+WantedBy=multi-user.target

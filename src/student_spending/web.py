@@ -8,9 +8,12 @@ GET form fields, so the page needs no JavaScript and every view is bookmarkable.
 
 from __future__ import annotations
 
+import contextvars
 import csv
+import hmac
 import html
 import io
+import ipaddress
 import json
 import logging
 import sqlite3
@@ -701,6 +704,21 @@ def escape_attr(value: object) -> str:
     return html.escape("" if value is None else str(value), quote=True)
 
 
+_CSRF_VALUE: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "planit_csrf", default=""
+)
+
+
+def csrf_field() -> str:
+    """Hidden field binding an authenticated form to the current session."""
+    token = _CSRF_VALUE.get()
+    if not token:
+        return ""
+    return (
+        '<input type="hidden" name="csrf" value="' + escape_attr(token) + '">'
+    )
+
+
 def _document(
     title: str,
     body: str,
@@ -718,8 +736,8 @@ def _document(
         "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n"
         "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
         f"<title>{escape_attr(title)}</title>\n"
-        "<meta name=\"description\" content=\"Interactive analysis workspace for the "
-        "synthetic student spending pipeline.\">\n"
+        "<meta name=\"description\" content=\"Plan It budgeting and spending "
+        "analysis workspace.\">\n"
         "<link rel=\"icon\" href=\"data:,\">\n"
         f"{extra_head}"
         f"<style>{BASE_CSS}{_DASH_CSS}</style>\n</head>\n<body>\n"
@@ -783,7 +801,7 @@ def _account_bar(account: Account | None) -> str:
         return (
             '<div class="account-bar">'
             '<span class="account-mode"><span class="status-dot"></span>'
-            " Demo mode &middot; sample dashboard</span>"
+            " Sample dashboard &middot; public data</span>"
             '<span class="account-links"><a href="/login">Sign in</a>'
             '<a class="account-cta" href="/signup">Create account</a></span>'
             "</div>"
@@ -794,6 +812,7 @@ def _account_bar(account: Account | None) -> str:
         f"<strong>{escape_attr(account.display_name)}</strong></span>"
         '<span class="account-links"><a href="/account">Account</a>'
         '<form method="post" action="/logout">'
+        f"{csrf_field()}"
         '<button class="account-signout" type="submit">Sign out</button>'
         "</form></span></div>"
     )
@@ -806,16 +825,16 @@ def _auth_side(*, signed_up: bool) -> str:
     )
     return f"""
   <aside class="panel auth-side" aria-labelledby="auth-side-title">
-    <span class="auth-badge">Local demo accounts</span>
+    <span class="auth-badge">Local accounts</span>
     <h2 id="auth-side-title">What an account unlocks</h2>
-    <p class="lead">Accounts only gate the personal tools. Every number you enter is
-      made up, stored on this machine and never sent anywhere.</p>
+    <p class="lead">Accounts gate the personal tools. Your figures stay on this
+      server, are scoped to your account and are never sold or sent to advertisers.</p>
     <ol class="auth-steps">
       <li><strong>Money planner</strong> &mdash; your categories, spending entries and
         the printable receipt.</li>
-      <li><strong>Synthetic uploads</strong> &mdash; validate one CSV and explore the
-        isolated dashboard it builds.</li>
-      <li><strong>No remote service</strong> &mdash; passwords are kept as salted
+      <li><strong>CSV uploads</strong> &mdash; validate one transactions CSV and explore
+        the isolated dashboard it builds.</li>
+      <li><strong>No third-party tracking</strong> &mdash; passwords are kept as salted
         scrypt hashes; sessions end after {SESSION_SECONDS // 3600} hours.</li>
     </ol>
     {sample if not signed_up else ""}
@@ -840,7 +859,7 @@ def render_login_page(
     <section class="panel auth-card" aria-labelledby="login-title">
       <p class="eyebrow">Welcome back</p>
       <h1 id="login-title">Sign in to <span>plan your money</span></h1>
-      <p class="lead">Use the demo account you created on this machine. No email is
+      <p class="lead">Use the account you created on this service. No email is
         sent; if you saved your one-time recovery code you can reset the password.</p>
       {notice_html}
       {_plan_error_banner(errors or [])}
@@ -863,11 +882,11 @@ def render_login_page(
         <a href="/reset">Use a recovery code</a>
       </p>
       <p class="auth-alternate">New here?
-        <a href="{escape_attr(_auth_href('/signup', next_path))}">Create a demo account</a>
+        <a href="{escape_attr(_auth_href('/signup', next_path))}">Create an account</a>
       </p>
-      <p class="auth-note"><strong>Demo only.</strong> Never reuse a real password or
-        enter bank, card or payment credentials. This account lives in
-        <code>data/accounts.db</code> on this computer.</p>
+      <p class="auth-note"><strong>Local account.</strong> Never reuse a real password
+        or enter bank, card or payment credentials. Account records stay on the
+        server that runs this service.</p>
     </section>
     {_auth_side(signed_up=False)}
   </div>
@@ -888,9 +907,9 @@ def render_signup_page(
   <div class="auth-grid">
     <section class="panel auth-card" aria-labelledby="signup-title">
       <p class="eyebrow">Create an account</p>
-      <h1 id="signup-title">Make a <span>local demo identity</span></h1>
+      <h1 id="signup-title">Make a <span>local account</span></h1>
       <p class="lead">A display name, an email and a password are enough. No email is
-        sent, so any address you are comfortable storing locally works.</p>
+        sent, so use an address you are comfortable storing on this service.</p>
       {_plan_error_banner(errors or [])}
       <form class="auth-form" method="post" action="/signup" accept-charset="utf-8">
         <input type="hidden" name="next" value="{escape_attr(next_path)}">
@@ -922,11 +941,6 @@ def render_signup_page(
             autocomplete="new-password">
         </div>
         <label class="check-field">
-          <input type="checkbox" name="demo_ack" value="yes" required>
-          <span><strong>I understand this is a demo account.</strong> I will use made-up
-            details and never enter real account, card or payment credentials.</span>
-        </label>
-        <label class="check-field">
           <input type="checkbox" name="privacy_ack" value="yes" required>
           <span><strong>I agree to the data practices described here.</strong> I have
             read the <a href="/privacy">Privacy notice</a> and
@@ -939,8 +953,10 @@ def render_signup_page(
       <p class="auth-alternate">Already have one?
         <a href="{escape_attr(_auth_href('/login', next_path))}">Sign in</a>
       </p>
-      <p class="auth-note"><strong>Stored locally.</strong> The password is saved only
-        as a salted scrypt hash, and the session cookie is HttpOnly and expires after
+      <p class="auth-note"><strong>Your account.</strong> Use your own name and email.
+        Never enter card numbers, bank or mobile-money PINs or other payment
+        credentials. The password is saved
+        only as a salted scrypt hash, and the session cookie is HttpOnly and expires after
         {SESSION_SECONDS // 3600} hours. A one-time recovery code is shown after
         sign-up so you can reset the password without email.</p>
     </section>
@@ -1037,6 +1053,7 @@ def render_account_page(
     consent_form = (
         f"""
       <form class="auth-form" method="post" action="/account/consent">
+        {csrf_field()}
         <label class="check-field">
           <input type="checkbox" name="privacy_ack" value="yes" required>
           <span>I have read the <a href="/privacy">Privacy notice</a> and
@@ -1061,7 +1078,7 @@ def render_account_page(
     <p class="eyebrow">Plan It &middot; account</p>
     <h1>Your <span>account</span></h1>
     <p class="lede">Manage the local identity that unlocks the money planner and
-      synthetic uploads. Password re-entry is required for export, recovery and
+      uploads. Password re-entry is required for export, recovery and
       deletion.</p>
     <div class="hero-actions">
       <a class="button primary" href="/plan">Open the planner</a>
@@ -1073,7 +1090,7 @@ def render_account_page(
   {_plan_error_banner(errors or [])}
   <section class="panel" aria-labelledby="account-facts-title">
     <p class="eyebrow">Identity</p>
-    <h2 id="account-facts-title">Stored locally</h2>
+    <h2 id="account-facts-title">Account details</h2>
     <dl class="account-facts">
       <div><dt>Display name</dt><dd>{escape_attr(account.display_name)}</dd></div>
       <div><dt>Email</dt><dd>{escape_attr(account.email)}</dd></div>
@@ -1096,6 +1113,7 @@ def render_account_page(
       <h2 id="account-recovery-title">Recovery code</h2>
       <p class="section-note">{recovery_note}</p>
       <form class="auth-form" method="post" action="/account/recovery">
+        {csrf_field()}
         <div class="field">
           <label for="recovery-password">Current password</label>
           <input id="recovery-password" name="current_password" type="password"
@@ -1110,6 +1128,7 @@ def render_account_page(
       <p class="section-note">Changing the password signs out every session,
         including this one.</p>
       <form class="auth-form" method="post" action="/account/password">
+        {csrf_field()}
         <div class="field">
           <label for="password-current">Current password</label>
           <input id="password-current" name="current_password" type="password"
@@ -1137,6 +1156,7 @@ def render_account_page(
         and upload metadata. It never includes the password or recovery-code hash.
         Plans are not stored, so there is no plan history to export.</p>
       <form class="auth-form" method="post" action="/account/export">
+        {csrf_field()}
         <div class="field">
           <label for="export-password">Password</label>
           <input id="export-password" name="password" type="password" required
@@ -1152,6 +1172,7 @@ def render_account_page(
     <p class="lead">This removes the account, every session and every uploaded
       analysis owned by the account. It cannot be undone.</p>
     <form class="auth-form" method="post" action="/account/delete">
+      {csrf_field()}
       <div class="field">
         <label for="delete-password">Password</label>
         <input id="delete-password" name="password" type="password" required
@@ -1165,8 +1186,8 @@ def render_account_page(
     </form>
   </section>
   <footer class="panel footer">
-    <p><strong>Local by design.</strong> Nothing on this page is sent to a remote
-      service. {escape_attr(legal.DISCLAIMER)}</p>
+    <p><strong>Your data.</strong> Account details and uploads stay on the
+      operator's server and are never sold. {escape_attr(legal.DISCLAIMER)}</p>
     <div class="footer-links">{_legal_links()}<a class="totop" href="/">Dashboard</a></div>
   </footer>
 </main>
@@ -1185,6 +1206,7 @@ def render_delete_analysis_page(analysis: AnalysisWorkspace) -> str:
       the committed sample warehouse are not affected.</p>
     <p class="banner bad" role="alert"><strong>This cannot be undone.</strong></p>
     <form method="post" action="/delete-analysis">
+      {csrf_field()}
       <input type="hidden" name="analysis_id" value="{escape_attr(analysis.analysis_id)}">
       <div class="plan-actions">
         <button class="button ghost danger" type="submit">Delete this analysis</button>
@@ -1518,7 +1540,7 @@ def _kpi_cards(kpis: dict) -> str:
         ("Total spend", f"KES {money(kpis['total_kes'])}", "matching the current filters"),
         ("Transactions", integer(kpis["transaction_count"]),
          f"{integer(flagged)} flagged for review" if flagged else "none flagged for review"),
-        ("Students", integer(kpis["student_count"]), "distinct synthetic profiles"),
+        ("Students", integer(kpis["student_count"]), "distinct student profiles"),
         ("Average transaction", f"KES {money(kpis['avg_transaction_kes'])}",
          f"KES {money(kpis['avg_daily_kes'])} per day across "
          f"{integer(kpis['days_covered'])} days"),
@@ -1613,7 +1635,7 @@ def _filter_panel(
         <a class="button ghost" href="{_dataset_href(filters)}">Reset everything</a>
       </div>
       <p class="note">The dashboard reads this warehouse in read-only mode. Filter values
-        are not stored; uploaded datasets stay on this machine.</p>
+        are not stored; uploaded datasets stay on this server.</p>
     </form>
   </section>"""
 
@@ -2233,19 +2255,20 @@ def render_upload_page(
 <main class="shell">
   {_account_bar(account)}
   <header class="hero dash-hero" id="top">
-    <p class="eyebrow">Synthetic data &middot; build an analysis</p>
+    <p class="eyebrow">Your data &middot; build an analysis</p>
     <h1>Analyze <span>your data</span></h1>
     <p class="lede">Upload one transactions CSV and the pipeline validates every row,
       derives the student list, loads an isolated warehouse and opens the same
-      filterable dashboard. Nothing is uploaded to a remote service.</p>
+      filterable dashboard. The file is processed on this server and scoped to your
+      account.</p>
     <div class="hero-actions">
       <a class="button primary" href="#upload-form">Upload a CSV</a>
       <a class="button ghost" href="/plan">Plan my own money</a>
       {back_link}
     </div>
-    <p class="disclaimer"><strong>Synthetic data only.</strong> Do not upload real
-      student, account, card or payment information. Every analysis is built for a
-      learning exercise.</p>
+    <p class="disclaimer"><strong>Only data you may process.</strong> Upload records you
+      have the right to use. Never upload card numbers, bank or mobile-money PINs,
+      national ID numbers or another person's data.</p>
   </header>
 
   {notice_html}
@@ -2262,6 +2285,7 @@ def render_upload_page(
         variance is skipped. Download the sample below for a known-good starting point.</p>
       {_upload_errors(errors or [])}
       <form class="upload-form" method="post" action="/upload" enctype="multipart/form-data">
+        {csrf_field()}
         <div class="field field-full">
           <label for="analysis-title">Analysis name <span class="section-note">optional</span></label>
           <input id="analysis-title" name="title" type="text" maxlength="{MAX_TITLE_LENGTH}"
@@ -2274,18 +2298,19 @@ def render_upload_page(
           <a href="/samples/student_expenses.csv" download>transactions</a>
         </div>
         <label class="check-field">
-          <input type="checkbox" name="synthetic" value="yes" required>
-          <span><strong>I confirm this file is synthetic.</strong> It contains no real
-            student, account, card or payment details.</span>
+          <input type="checkbox" name="authorised" value="yes" required>
+          <span><strong>I have the right to process this file.</strong> It contains no
+            card numbers, bank or mobile-money PINs, national ID numbers or another
+            person's data.</span>
         </label>
         <div class="actions">
           <button class="button primary" type="submit">Run analysis</button>
           <span class="section-note">The pipeline runs immediately; this may take a moment.</span>
         </div>
         <p class="upload-note">Limits: one .csv file, {file_bytes} MB and
-          {MAX_CSV_ROWS:,} data rows. Files are saved locally under
-          <code>data/uploads/</code>; each analysis gets its own database and report.
-          No profiles or budgets file is required.</p>
+          {MAX_CSV_ROWS:,} data rows. The file is stored in the operator's upload
+          directory; each analysis gets its own database and report. Do not upload
+          payment credentials. No profiles or budgets file is required.</p>
       </form>
     </section>
 
@@ -2293,7 +2318,7 @@ def render_upload_page(
       <p class="eyebrow">History</p>
       <h2 id="recent-title">Recent analyses</h2>
       <p class="lead">Only analyses that completed loading appear here. Each one keeps
-        its inputs, SQLite warehouse and report on this machine.</p>
+        its inputs, SQLite warehouse and report on this server.</p>
       {_recent_analyses(analyses)}
       <ol class="upload-steps">
         <li><strong>Check</strong> the headers, encoding, row count and size.</li>
@@ -2304,11 +2329,11 @@ def render_upload_page(
   </div>
 
   <footer class="panel footer">
-    <p><strong>Local and read-only after loading.</strong> Demo accounts live in
-      <code>data/accounts.db</code>; the upload and money-plan endpoints are the only
-      analysis write paths, and analysis pages open SQLite with <code>mode=ro</code>.
-      Keep the server on loopback and use made-up credentials.</p>
-    <p class="meta-line">Student Spending Analytics &middot; synthetic data only</p>
+    <p><strong>Read-only after loading.</strong> The upload and money-plan endpoints
+      are the only analysis write paths, and analysis pages open SQLite with
+      <code>mode=ro</code>. Upload only records you have the right to process, and
+      never enter payment credentials.</p>
+    <p class="meta-line">Plan It &middot; personal spending analysis</p>
     <p class="section-note">{escape_attr(legal.DISCLAIMER)}</p>
     <div class="footer-links">
       {_legal_links()}
@@ -2481,9 +2506,10 @@ def render_plan_page(
       {analysis_action}
       <a class="button ghost" href="/">Explore the sample dataset</a>
     </div>
-    <p class="disclaimer"><strong>Made-up numbers only.</strong> This is a learning tool.
-      Do not enter account numbers, card details or payment credentials. Nothing is sent
-      to a bank or a remote service; your numbers stay on this machine.</p>
+    <p class="disclaimer"><strong>A planning tool, not advice.</strong> Plan It compares
+      the figures you enter; it does not provide financial advice. Never enter account
+      numbers, card details, mobile-money PINs or payment credentials. Your plan is
+      rendered on this server and is not saved.</p>
   </header>
 
   <nav class="toc" aria-label="Money plan sections">
@@ -2492,6 +2518,7 @@ def render_plan_page(
   </nav>
 
   <form class="plan-form" method="post" action="/plan#analysis" accept-charset="utf-8">
+    {csrf_field()}
     <input type="hidden" name="category_rows" value="{category_rows}">
     <input type="hidden" name="spending_rows" value="{spending_rows}">
     <section class="panel" id="money" aria-labelledby="money-title">
@@ -2579,9 +2606,9 @@ def render_plan_page(
         your totals, every category against its plan, and graphs of where the money
         went.</p>
       <label class="check-field">
-        <input type="checkbox" name="synthetic" value="yes"{" checked" if draft.synthetic else ""} required>
-        <span><strong>These are made-up learning numbers.</strong> There are no real
-          student, account, card or payment details in this form.</span>
+        <input type="checkbox" name="advice_ack" value="yes"{" checked" if draft.advice_ack else ""} required>
+        <span><strong>I understand Plan It is a planning tool.</strong> It does not
+          provide financial, investment, tax or legal advice.</span>
       </label>
       <div class="plan-actions">
         <button class="button primary" type="submit">Run my analysis</button>
@@ -2589,20 +2616,19 @@ def render_plan_page(
         <span class="section-note">The analysis appears below this form.</span>
       </div>
       <p class="plan-section-note">The graphs and totals are generated in this page on
-        this machine. Nothing is saved as a separate plan link or file; your demo
-        account only unlocks the form.</p>
+        this server. Nothing is saved as a separate plan link or file; your account
+        only unlocks the form.</p>
     </section>
   </form>
 
   {analysis_html}
 
   <footer class="panel footer">
-    <p><strong>Local by design.</strong> The form is validated on the server, amounts
-      are stored as integer cents, and the analysis is rendered into this page. The
-      password you signed in with is stored as a salted scrypt hash; no bank or card
-      credentials are collected.</p>
-    <p class="meta-line">Student Spending Analytics &middot; money plan &middot;
-      made-up numbers only</p>
+    <p><strong>Your figures, handled carefully.</strong> The form is validated on the
+      server, amounts are stored as integer cents, and the analysis is rendered into
+      this page. The password you signed in with is stored as a salted scrypt hash;
+      no bank or card credentials are collected.</p>
+    <p class="meta-line">Plan It &middot; money plan &middot; not financial advice</p>
     <p class="section-note">{escape_attr(legal.DISCLAIMER)}</p>
     <div class="footer-links">
       {_legal_links()}
@@ -2790,7 +2816,7 @@ def _plan_suggestions(plan: object, analysis: object) -> str:
         "<h3>How to spend it better</h3>"
         f'<ul class="suggestion-list">{cards}</ul>'
         '<p class="plan-section-note">Built from the figures above by fixed local '
-        "rules. It is not financial advice and nothing is sent to any service.</p>"
+        "rules. It is not financial advice and nothing leaves this server.</p>"
     )
 
 
@@ -3027,7 +3053,7 @@ def _plan_receipt_panel(plan: MoneyPlan, analysis: PlanAnalysis) -> str:
         <header class="receipt-head">
           <span class="receipt-kicker">Student Spending Analytics</span>
           <strong class="receipt-title">Money plan receipt</strong>
-          <span class="receipt-sub">One student &middot; made-up numbers &middot; KES</span>
+          <span class="receipt-sub">One student &middot; plan figures &middot; KES</span>
         </header>
         <dl class="receipt-meta">
           <div><dt>Name</dt><dd>{escape_attr(plan.student_name)}</dd></div>
@@ -3046,8 +3072,8 @@ def _plan_receipt_panel(plan: MoneyPlan, analysis: PlanAnalysis) -> str:
             <dd>{money(analysis.money_available_cents / 100)}</dd></div>
           <div class="receipt-balance"><dt>{balance_label}</dt><dd>{balance_value}</dd></div>
         </dl>
-        <p class="receipt-foot">Generated locally &middot; not a financial document<br>
-          synthetic learning numbers only</p>
+        <p class="receipt-foot">Generated on this server &middot; not a financial document<br>
+          planning figures only</p>
         <div class="receipt-barcode" aria-hidden="true"></div>
         <p class="receipt-code" aria-hidden="true">SSA &middot;
           {escape_attr(analysis.recorded_at.strftime("%d %b %Y"))} &middot;
@@ -3084,7 +3110,7 @@ def _plan_snapshot_fields(
     hidden("method_note", draft.method_note)
     hidden("category_rows", str(category_rows))
     hidden("spending_rows", str(spending_rows))
-    hidden("synthetic", "yes")
+    hidden("advice_ack", "yes")
     for number in range(1, category_rows + 1):
         row = draft.category(number)
         hidden(f"category_name_{number}", row.name)
@@ -3151,6 +3177,7 @@ def _plan_coach_panel(
       machine.</p>
     <form class="coach-form" method="post" action="/plan#coach"
       accept-charset="utf-8">
+      {csrf_field()}
       {snapshot}
       <input type="hidden" name="action" value="ask_coach">
       <div class="coach-question">
@@ -3200,6 +3227,7 @@ def _plan_analysis_sections(
       <a class="button ghost" href="#money">Change the numbers</a>
     </div>
     <form class="plan-export" method="post" action="/plan.csv" accept-charset="utf-8">
+      {csrf_field()}
       {_plan_snapshot_fields(draft, category_rows=category_rows, spending_rows=spending_rows)}
       <button class="button ghost" type="submit">Download this plan as CSV</button>
     </form>
@@ -3328,6 +3356,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802 - required by http.server
         path = urllib.parse.urlsplit(self.path).path
+        self._set_csrf_context()
         try:
             if path in ("/login", "/signup", "/logout", "/reset"):
                 if self.command != "POST":
@@ -3545,7 +3574,16 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self._redirect(next_path)
 
     def _client_key(self) -> str:
-        return str(self.client_address[0]) if self.client_address else "local"
+        """Rate-limit key: the proxy-forwarded client when explicitly trusted."""
+        remote = str(self.client_address[0]) if self.client_address else "local"
+        if not config.TRUST_PROXY:
+            return remote
+        forwarded = self.headers.get("X-Forwarded-For", "")
+        candidate = forwarded.split(",", 1)[0].strip()
+        try:
+            return str(ipaddress.ip_address(candidate))
+        except ValueError:
+            return remote
 
     def _session_token(self) -> str:
         return _cookie_value(self.headers.get("Cookie", ""), SESSION_COOKIE)
@@ -3594,6 +3632,45 @@ class DashboardHandler(BaseHTTPRequestHandler):
         )
         self.close_connection = True
 
+    def _set_csrf_context(self) -> None:
+        token = self._session_token()
+        value = self.server.accounts.csrf_for_token(token) if token else ""
+        _CSRF_VALUE.set(value)
+
+    def _csrf_valid(self, form: dict[str, list[str]]) -> bool:
+        expected = _CSRF_VALUE.get()
+        supplied = _first(form, "csrf")
+        return (
+            bool(expected)
+            and bool(supplied)
+            and hmac.compare_digest(expected, supplied)
+        )
+
+    def _require_csrf(
+        self,
+        form: dict[str, list[str]],
+        action: str,
+        label: str,
+        *,
+        eyebrow: str = "Account",
+    ) -> bool:
+        if self._csrf_valid(form):
+            return True
+        self._send(
+            HTTPStatus.FORBIDDEN,
+            _error_document(
+                "Request blocked",
+                "That form has expired or did not come from this page. Reload "
+                "the page and submit it again.",
+                action_href=action,
+                action_label=label,
+                eyebrow=eyebrow,
+            ),
+            headers=[("Connection", "close")],
+        )
+        self.close_connection = True
+        return False
+
     def _read_auth_form(self) -> dict[str, list[str]]:
         raw_length = self.headers.get("Content-Length")
         if raw_length is None:
@@ -3608,7 +3685,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             raise _AuthRequestError("The form was empty.")
         if length > MAX_AUTH_REQUEST_BYTES:
             raise _AuthRequestError(
-                "That form is larger than this demo accepts.", status=413
+                "That form is larger than the server accepts.", status=413
             )
         media_type = (
             self.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
@@ -3738,7 +3815,6 @@ class DashboardHandler(BaseHTTPRequestHandler):
         raw_email = _first(form, "email").strip()
         password = _first(form, "password")
         confirm = _first(form, "confirm")
-        acknowledged = _first(form, "demo_ack") == "yes"
         privacy_acknowledged = _first(form, "privacy_ack") == "yes"
 
         name = raw_name
@@ -3758,11 +3834,6 @@ class DashboardHandler(BaseHTTPRequestHandler):
             errors.append(str(error))
         if password != confirm:
             errors.append("The two passwords do not match.")
-        if not acknowledged:
-            errors.append(
-                "Confirm that this is a demo account and that no real financial "
-                "details will be entered."
-            )
         if not privacy_acknowledged:
             errors.append(
                 "Read and agree to the privacy notice and terms before creating "
@@ -3798,7 +3869,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
 
         token = self.server.accounts.create_session(account.account_id)
-        logger.info("created demo account %s", account.account_id)
+        logger.info("created account %s", account.account_id)
         # The recovery code is shown once on the account page. Only its digest is
         # written to disk, so it is held in memory until that page renders.
         code = self.server.accounts.generate_recovery_code(
@@ -3849,6 +3920,34 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self._send(
             HTTPStatus.OK,
             render_legal_page(title, body),
+            head_only=head_only,
+        )
+
+    def _health(self, *, head_only: bool) -> None:
+        checks = {"warehouse": False, "accounts": False}
+        try:
+            connection = self._open()
+            try:
+                connection.execute("SELECT 1 FROM transactions LIMIT 1").fetchone()
+            finally:
+                connection.close()
+            checks["warehouse"] = True
+        except (sqlite3.Error, OSError):
+            logger.exception("health check could not read the warehouse")
+        checks["accounts"] = self.server.accounts.path.is_file()
+        healthy = all(checks.values())
+        payload = json.dumps(
+            {
+                "status": "ok" if healthy else "degraded",
+                "version": __version__,
+                "checks": checks,
+            },
+            sort_keys=True,
+        )
+        self._send(
+            HTTPStatus.OK if healthy else HTTPStatus.SERVICE_UNAVAILABLE,
+            payload,
+            content_type="application/json; charset=utf-8",
             head_only=head_only,
         )
 
@@ -3969,6 +4068,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 headers=[("Connection", "close")],
             )
             self.close_connection = True
+            return
+        if not self._require_csrf(
+            form, "/account", "Back to the account page"
+        ):
             return
 
         key = "account:" + self._client_key()
@@ -4171,6 +4274,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
             ), headers=[("Connection", "close")])
             self.close_connection = True
             return
+        if not self._require_csrf(
+            form, "/upload", "Back to uploads", eyebrow="Upload"
+        ):
+            return
         analysis_id = _first(form, "analysis_id")
         if not delete_analysis(analysis_id, account_id=account.account_id):
             self._send(
@@ -4209,6 +4316,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     eyebrow="Money plan",
                 ),
             )
+            return
+        if not self._require_csrf(
+            form, "/plan", "Back to the money plan", eyebrow="Money plan"
+        ):
             return
         category_rows = _form_row_count(
             form, "category_rows", default=CATEGORY_ROWS, maximum=MAX_CATEGORIES
@@ -4252,6 +4363,26 @@ class DashboardHandler(BaseHTTPRequestHandler):
             )
             return
         token = self._session_token()
+        if token and self.server.accounts.account_for_token(token) is not None:
+            try:
+                form = self._read_auth_form()
+            except _AuthRequestError as error:
+                self._send(
+                    error.status,
+                    _error_document(
+                        "Sign out not accepted",
+                        str(error),
+                        action_href="/account",
+                        action_label="Back to the account page",
+                    ),
+                    headers=[("Connection", "close")],
+                )
+                self.close_connection = True
+                return
+            if not self._require_csrf(
+                form, "/account", "Back to the account page"
+            ):
+                return
         if token:
             self.server.accounts.delete_session(token)
         self._redirect(
@@ -4293,6 +4424,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
             )
             return
 
+        if not self._require_csrf(
+            form, "/plan", "Back to the money plan", eyebrow="Money plan"
+        ):
+            return
         category_rows = _form_row_count(
             form, "category_rows", default=CATEGORY_ROWS, maximum=MAX_CATEGORIES
         )
@@ -4427,6 +4562,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
             content_type = self.headers.get("Content-Type", "")
             bundle = parse_upload(content_type, body)
             title = bundle.title
+            if not self._require_csrf(
+                {"csrf": [bundle.csrf]}, "/upload", "Back to uploads",
+                eyebrow="Upload",
+            ):
+                return
             analysis = create_analysis(bundle, account_id=account.account_id)
         except PipelineFailure as error:
             logger.warning("analysis pipeline failed: %s", error)
@@ -4551,8 +4691,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
         parsed = urllib.parse.urlsplit(self.path)
         path = parsed.path
         query = urllib.parse.parse_qs(parsed.query, keep_blank_values=True)
+        self._set_csrf_context()
         try:
-            if path == "/":
+            if path == "/healthz":
+                self._health(head_only=head_only)
+            elif path == "/":
                 self._page(query, head_only=head_only)
             elif path == "/login":
                 self._login_page(query, head_only=head_only)
@@ -4705,19 +4848,21 @@ class DashboardHandler(BaseHTTPRequestHandler):
 def create_server(
     db_path: Path | str,
     *,
-    host: str = "127.0.0.1",
+    host: str | None = None,
     port: int = 0,
     report_path: Path | str | None = None,
     accounts_path: Path | str | None = None,
-    secure_cookies: bool = False,
+    secure_cookies: bool | None = None,
 ) -> DashboardServer:
     db_path = Path(db_path)
     if not db_path.is_file():
         raise FileNotFoundError(f"warehouse not found: {db_path}")
     if report_path is None:
         report_path = config.REPORTS_DIR / "spending_report.html"
+    if secure_cookies is None:
+        secure_cookies = config.SECURE_COOKIES
     return DashboardServer(
-        (host, port),
+        (host or config.HOST, port),
         db_path=db_path,
         report_path=Path(report_path),
         accounts_path=accounts_path,
@@ -4735,13 +4880,22 @@ def _display_path(path: Path) -> str:
 def serve(
     db_path: Path | str = config.DEFAULT_DB_PATH,
     *,
-    host: str = "127.0.0.1",
+    host: str | None = None,
     port: int = 8000,
     open_browser: bool = False,
     accounts_path: Path | str | None = None,
-    secure_cookies: bool = False,
+    secure_cookies: bool | None = None,
 ) -> int:
     """Start the dashboard and block until Ctrl+C. Returns a process exit code."""
+    problems = config.production_problems()
+    if problems:
+        print("Refusing to start: production configuration is incomplete.")
+        for problem in problems:
+            print(f"  - {problem}")
+        print("Set the missing PLANIT_* variables, then start the service again.")
+        return 2
+    host = host or config.HOST
+    secure_cookies = config.SECURE_COOKIES if secure_cookies is None else secure_cookies
     db_path = Path(db_path)
     if not db_path.is_file():
         print(f"Warehouse not found: {db_path}")
@@ -4779,17 +4933,25 @@ def serve(
     display_host = "127.0.0.1" if bound_host in ("0.0.0.0", "::") else str(bound_host)
     if ":" in display_host:
         display_host = f"[{display_host}]"
-    url = f"http://{display_host}:{bound_port}/"
+    scheme = "https" if secure_cookies else "http"
+    url = config.PUBLIC_URL or f"{scheme}://{display_host}:{bound_port}/"
+    if not url.endswith("/"):
+        url += "/"
     print()
     print("Student Spending Explorer")
     print(f"  {url}")
     print(f"  warehouse: {_display_path(db_path)} (read-only)")
-    print(f"  accounts: {_display_path(server.accounts.path)} (local demo accounts)")
-    print("  synthetic data only; press Ctrl+C to stop")
+    print(f"  accounts: {_display_path(server.accounts.path)} (private)")
+    if config.PRODUCTION:
+        print(f"  environment: production ({config.PUBLIC_URL})")
+        print("  personal data: keep disks and backups encrypted; review the runbook")
+    else:
+        print("  environment: development; local accounts, data stays on this machine")
     if host not in ("127.0.0.1", "localhost", "::1"):
-        print("  warning: bound beyond loopback; demo accounts are not internet-grade")
+        print(f"  listening on {host}:{bound_port}")
+        print("  put TLS and request limits in front; do not expose this port directly")
     if secure_cookies:
-        print("  secure cookies: on (serve behind HTTPS, or sign-in will not persist)")
+        print("  secure cookies: on (the browser must reach the service over HTTPS)")
     print()
 
     if open_browser:

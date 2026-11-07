@@ -1,0 +1,40 @@
+[Unit]
+Description=Plan It budgeting and spending analysis
+Documentation=file:/opt/plan-it/docs/DEPLOYMENT.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=planit
+Group=planit
+
+# The checkout or installed application lives here; adjust if different.
+WorkingDirectory=/opt/plan-it
+EnvironmentFile=/etc/plan-it/plan-it.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/plan-it/.venv/bin/student-spending serve --host 127.0.0.1 --port 8000
+
+Restart=on-failure
+RestartSec=5
+UMask=0077
+
+# Limits and isolation. The app only needs its data directories and the
+# loopback address; TLS and public traffic are handled by Caddy or nginx.
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+LockPersonality=yes
+ReadWritePaths=/var/lib/plan-it /var/log/plan-it
+
+[Install]
+WantedBy=multi-user.target

@@ -107,11 +107,11 @@ def _seed(db_path: Path) -> None:
 def signup_cookie(
     base: str,
     *,
-    email: str = "demo@example.test",
-    name: str = "Demo Student",
+    email: str = "student@example.test",
+    name: str = "Test Student",
     password: str = "synthetic1",
 ) -> str:
-    """Create a demo account over HTTP and return its session Cookie header."""
+    """Create an account over HTTP and return its session Cookie header."""
     parsed = urllib.parse.urlsplit(base)
     connection = http.client.HTTPConnection(parsed.hostname, parsed.port, timeout=60)
     try:
@@ -121,7 +121,6 @@ def signup_cookie(
                 "email": email,
                 "password": password,
                 "confirm": password,
-                "demo_ack": "yes",
                 "privacy_ack": "yes",
             }
         ).encode("utf-8")
@@ -137,11 +136,66 @@ def signup_cookie(
         response = connection.getresponse()
         response.read()
         if response.status != 303:
-            raise AssertionError(f"demo sign-up failed: {response.status}")
+            raise AssertionError(f"sign-up failed: {response.status}")
         header = response.getheader("Set-Cookie") or ""
         return header.split(";", 1)[0]
     finally:
         connection.close()
+
+
+def csrf_for(base: str, cookie: str) -> str:
+    """Read the CSRF token bound to a signed-in test session."""
+    parsed = urllib.parse.urlsplit(base)
+    connection = http.client.HTTPConnection(parsed.hostname, parsed.port, timeout=30)
+    try:
+        connection.request("GET", "/account", headers={"Cookie": cookie})
+        response = connection.getresponse()
+        page = response.read().decode("utf-8", "replace")
+        if response.status != 200:
+            return ""
+        match = re.search(r'name="csrf" value="([^"]+)"', page)
+        return match.group(1) if match else ""
+    finally:
+        connection.close()
+
+
+class HealthCheckTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.db_path = self.root / "fixture.db"
+        _seed(self.db_path)
+        self.report_path = self.root / "spending_report.html"
+        self.report_path.write_text(REPORT_SENTINEL, encoding="utf-8")
+        self.server = web.create_server(
+            self.db_path,
+            port=0,
+            report_path=self.report_path,
+            accounts_path=self.root / "accounts.db",
+        )
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+        self.base = f"http://127.0.0.1:{self.server.server_address[1]}"
+
+    def tearDown(self) -> None:
+        self.server.shutdown()
+        self.server.server_close()
+        self.thread.join(timeout=5)
+        self._tmp.cleanup()
+
+    def fetch_health(self) -> tuple[int, dict]:
+        try:
+            with urllib.request.urlopen(self.base + "/healthz", timeout=10) as response:
+                return response.status, json.loads(response.read())
+        except urllib.error.HTTPError as error:
+            return error.code, json.loads(error.read())
+
+    def test_missing_warehouse_degrades_without_crashing(self) -> None:
+        self.db_path.unlink()
+        status, payload = self.fetch_health()
+        self.assertEqual(status, 503)
+        self.assertEqual(payload["status"], "degraded")
+        self.assertFalse(payload["checks"]["warehouse"])
 
 
 class DashboardTests(unittest.TestCase):
@@ -209,6 +263,15 @@ class DashboardTests(unittest.TestCase):
         body = re.search(r"<tbody>(.*?)</tbody>", page, re.S)
         assert body is not None
         return body.group(1).split("</tr>")[0]
+
+    def test_health_check_reports_database_state(self) -> None:
+        status, headers, body = self.fetch("/healthz")
+        self.assertEqual(status, 200)
+        self.assertEqual(headers["Content-Type"], "application/json; charset=utf-8")
+        payload = json.loads(body)
+        self.assertEqual(payload["status"], "ok")
+        self.assertEqual(payload["checks"], {"warehouse": True, "accounts": True})
+        self.assertTrue(payload["version"])
 
     def test_dashboard_matches_sql_and_offers_controls(self) -> None:
         status, headers, page = self.fetch("/")
@@ -494,7 +557,7 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(kwargs["host"], "127.0.0.1")
         self.assertEqual(kwargs["port"], 0)
         self.assertFalse(kwargs["open_browser"])
-        self.assertFalse(kwargs["secure_cookies"])
+        self.assertIsNone(kwargs["secure_cookies"])
 
     def test_cli_prune_uploads_is_a_dry_run_by_default(self) -> None:
         output = io.StringIO()
@@ -597,6 +660,12 @@ class UploadPlatformTests(unittest.TestCase):
         headers: dict[str, str] | None = None,
         path: str = "/upload",
     ) -> tuple[int, dict, str]:
+        if content_type.startswith("application/x-www-form-urlencoded"):
+            token = csrf_for(self.base, self.cookie)
+            if token and b"csrf=" not in body:
+                body += (b"&" if body else b"") + urllib.parse.urlencode(
+                    {"csrf": token}
+                ).encode("utf-8")
         connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=60)
         try:
             request_headers = {
@@ -625,12 +694,12 @@ class UploadPlatformTests(unittest.TestCase):
             "transactions": ("transactions.csv", transactions.encode("utf-8")),
         }
 
-    @staticmethod
     def multipart(
+        self,
         files: dict[str, tuple[str, bytes]],
         *,
         title: str | None = "",
-        synthetic: bool = True,
+        authorised: bool = True,
         extra: list[tuple[str, str]] | None = None,
         duplicate_title: bool = False,
     ) -> tuple[str, bytes]:
@@ -658,8 +727,11 @@ class UploadPlatformTests(unittest.TestCase):
             add_text("title", title)
             if duplicate_title:
                 add_text("title", title + " again")
-        if synthetic:
-            add_text("synthetic", "yes")
+        token = csrf_for(self.base, self.cookie)
+        if token:
+            add_text("csrf", token)
+        if authorised:
+            add_text("authorised", "yes")
         for name, value in extra or []:
             add_text(name, value)
         for name, entry in files.items():
@@ -672,7 +744,7 @@ class UploadPlatformTests(unittest.TestCase):
         files: dict[str, tuple[str, bytes]] | None = None,
         *,
         title: str | None = "",
-        synthetic: bool = True,
+        authorised: bool = True,
         extra: list[tuple[str, str]] | None = None,
         duplicate_title: bool = False,
         headers: dict[str, str] | None = None,
@@ -680,7 +752,7 @@ class UploadPlatformTests(unittest.TestCase):
         content_type, body = self.multipart(
             files if files is not None else self.csv_files(),
             title=title,
-            synthetic=synthetic,
+            authorised=authorised,
             extra=extra,
             duplicate_title=duplicate_title,
         )
@@ -727,7 +799,7 @@ class UploadPlatformTests(unittest.TestCase):
     def test_upload_page_and_home_link(self) -> None:
         status, _, page = self.fetch("/upload")
         self.assertEqual(status, 200)
-        for control in ("title", "transactions", "synthetic"):
+        for control in ("title", "transactions", "authorised"):
             self.assertIn(f'name="{control}"', page)
         self.assertNotIn('name="profiles"', page)
         self.assertNotIn('name="budgets"', page)
@@ -738,7 +810,7 @@ class UploadPlatformTests(unittest.TestCase):
         self.assertNotIn("/samples/student_budgets.csv", page)
         self.assertIn("2 MB", page)
         self.assertIn("No profiles or budgets file is required.", page)
-        self.assertIn("Synthetic data only.", page)
+        self.assertIn("Only data you may process.", page)
 
         _, _, home = self.fetch("/")
         self.assertIn('href="/upload"', home)
@@ -900,8 +972,8 @@ class UploadPlatformTests(unittest.TestCase):
         )
 
         cases = [
-            ("missing confirmation", dict(synthetic=False), 400,
-             "Confirm that the file contains only synthetic data"),
+            ("missing confirmation", dict(authorised=False), 400,
+             "Confirm that you have the right to process this file"),
             ("duplicate title", dict(duplicate_title=True), 400,
              "appeared more than once"),
             ("unexpected text field", dict(extra=[("probe", "x")]), 400,
@@ -1165,6 +1237,12 @@ class MoneyPlanTests(unittest.TestCase):
             if raw_body is not None
             else urllib.parse.urlencode(fields).encode("utf-8")
         )
+        if raw_body is None:
+            token = csrf_for(self.base, self.cookie)
+            if token and b"csrf=" not in body:
+                body += (b"&" if body else b"") + urllib.parse.urlencode(
+                    {"csrf": token}
+                ).encode("utf-8")
         connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
         try:
             request_headers = {
@@ -1206,7 +1284,7 @@ class MoneyPlanTests(unittest.TestCase):
             ("Fun", "1800", "Concert"),
             ("Books", "200", "Notebook"),
         ),
-        synthetic: str | None = "yes",
+        advice_ack: str | None = "yes",
     ) -> list[tuple[str, str]]:
         fields = [
             ("student_name", name),
@@ -1233,8 +1311,8 @@ class MoneyPlanTests(unittest.TestCase):
                     (f"spending_note_{number}", entry_note),
                 ]
             )
-        if synthetic is not None:
-            fields.append(("synthetic", synthetic))
+        if advice_ack is not None:
+            fields.append(("advice_ack", advice_ack))
         return fields
 
     def create_plan(
@@ -1253,7 +1331,7 @@ class MoneyPlanTests(unittest.TestCase):
             "money_available",
             "method",
             "method_note",
-            "synthetic",
+            "advice_ack",
             "category_name_1",
             "spending_category_1",
             "spending_amount_1",
@@ -1265,7 +1343,7 @@ class MoneyPlanTests(unittest.TestCase):
         self.assertIn("stamped with this device's clock", page)
         self.assertIn('action="/plan#analysis"', page)
         self.assertIn("There is no fixed category list", page)
-        self.assertIn("Made-up numbers only.", page)
+        self.assertIn("A planning tool, not advice.", page)
         self.assertIn('href="/upload"', page)
 
         _, _, home = self.fetch("/")
@@ -1535,7 +1613,8 @@ class MoneyPlanTests(unittest.TestCase):
 
     def test_validation_errors_preserve_input_and_render_no_analysis(self) -> None:
         cases = [
-            (self.plan_fields(synthetic=None), "Confirm that the numbers are made up"),
+            (self.plan_fields(advice_ack=None),
+             "Confirm that you understand Plan It is a planning tool"),
             (
                 self.plan_fields(categories=(("Food", "1000", "essential"),)),
                 "Add at least two categories with names.",
@@ -1766,7 +1845,7 @@ class MoneyPlanTests(unittest.TestCase):
             "suggestion warn",
             "suggestion note",
             "suggestion good",
-            "not financial advice and nothing is sent to any service.",
+            "not financial advice and nothing leaves this server.",
         ):
             self.assertIn(text, page)
         self.assertLess(
@@ -1792,7 +1871,7 @@ class MoneyPlanTests(unittest.TestCase):
             '<input type="hidden" name="period" value="monthly">',
             '<input type="hidden" name="category_name_1" value="Rent">',
             '<input type="hidden" name="spending_note_1" value="October rent">',
-            '<input type="hidden" name="synthetic" value="yes">',
+            '<input type="hidden" name="advice_ack" value="yes">',
             'href="#coach"',
         ):
             self.assertIn(text, page)
@@ -1925,6 +2004,18 @@ class AuthTests(unittest.TestCase):
                 )
             if method == "POST":
                 request_headers.setdefault("Origin", self.base)
+            if (
+                method == "POST"
+                and fields is not None
+                and path not in {"/login", "/signup", "/reset"}
+                and "csrf" not in fields
+            ):
+                token = csrf_for(
+                    self.base, request_headers.get("Cookie", self.cookie)
+                )
+                if token:
+                    fields = dict(fields)
+                    fields["csrf"] = token
             payload = (
                 urllib.parse.urlencode(fields).encode("utf-8")
                 if fields is not None
@@ -1947,7 +2038,6 @@ class AuthTests(unittest.TestCase):
             "email": "new@example.test",
             "password": "synthetic1",
             "confirm": "synthetic1",
-            "demo_ack": "yes",
             "privacy_ack": "yes",
         }
         fields.update(overrides)
@@ -1979,7 +2069,7 @@ class AuthTests(unittest.TestCase):
             'name="password"',
             'name="next"',
             'href="/signup?next=%2Fplan"',
-            "Demo only",
+            "Local account",
         ):
             self.assertIn(text, page)
 
@@ -1991,9 +2081,8 @@ class AuthTests(unittest.TestCase):
             'name="email"',
             'name="password"',
             'name="confirm"',
-            'name="demo_ack"',
-            "local demo identity",
-            "never enter real account, card or payment credentials",
+            "local account",
+            "Never enter card numbers, bank or mobile-money PINs",
         ):
             self.assertIn(text, page)
 
@@ -2044,7 +2133,6 @@ class AuthTests(unittest.TestCase):
                 email="broken@example.test",
                 password="short",
                 confirm="different",
-                demo_ack="",
             ),
         )
         self.assertEqual(status, 422)
@@ -2052,7 +2140,6 @@ class AuthTests(unittest.TestCase):
         for text in (
             "at least 10 characters",
             "two passwords do not match",
-            "Confirm that this is a demo account",
             'value="New Student"',
             'value="broken@example.test"',
         ):
@@ -2391,13 +2478,41 @@ class AuthTests(unittest.TestCase):
 
         status, _, page = self.request("GET", "/")
         self.assertEqual(status, 200)
-        self.assertIn("Demo mode", page)
+        self.assertIn("Sample dashboard", page)
         self.assertIn('href="/login"', page)
         self.assertIn('href="/signup"', page)
 
         status, _, page = self.request("GET", "/report")
         self.assertEqual(status, 200)
         self.assertIn("REPORT SENTINEL", page)
+
+    def test_authenticated_forms_require_the_session_csrf_token(self) -> None:
+        status, _, page = self.request(
+            "GET", "/account", headers={"Cookie": self.cookie}
+        )
+        self.assertEqual(status, 200)
+        self.assertIn('name="csrf" value="', page)
+        self.assertEqual(page.count('name="csrf"'), 5)
+
+        for token in ("", "not-the-token"):
+            with self.subTest(token=token):
+                status, _, body = self.request(
+                    "POST",
+                    "/account/consent",
+                    fields={"privacy_ack": "yes", "csrf": token},
+                    headers={"Cookie": self.cookie},
+                )
+                self.assertEqual(status, 403)
+                self.assertIn("did not come from this page", body)
+
+        status, _, body = self.request(
+            "POST",
+            "/account/consent",
+            fields={"privacy_ack": "yes"},
+            headers={"Cookie": self.cookie},
+        )
+        self.assertEqual(status, 303)
+        self.assertEqual(body, "")
 
     def test_logout_clears_the_session_and_cookie(self) -> None:
         _, headers, _ = self.request(
